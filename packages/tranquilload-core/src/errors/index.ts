@@ -1,2 +1,8 @@
-// Placeholder — implemented in Story 1.2
-export const _placeholder: undefined = undefined
+export {
+  PartUploadError,
+  MaxRetriesExceededError,
+  PresignedUrlError,
+  CompleteUploadError,
+  AbortError,
+  type UploadError,
+} from "./upload-error.js"
