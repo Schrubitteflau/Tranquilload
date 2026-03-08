@@ -42,7 +42,7 @@ story_location: _bmad-output/implementation-artifacts
 development_status:
   # Epic 1: Project Foundation
   epic-1: in-progress
-  1-1-monorepo-scaffold: review
+  1-1-monorepo-scaffold: done
   1-2-error-types-definition: backlog
   1-3-effect-services-infrastructure: backlog
   1-4-core-utility-helpers: backlog

@@ -1,6 +1,6 @@
 # Story 1.1: Monorepo Scaffold
 
-Status: review
+Status: done
 
 ## Story
 
@@ -25,13 +25,13 @@ so that I can develop, test, and build both packages with a single toolchain.
   - [x] Create `tsconfig.base.json` with strict + isolatedDeclarations
   - [x] Update `.gitignore` (dist, node_modules, .turbo)
 
-- [x] Task 2: Scaffold `packages/core` (`@tranquilload`) (AC: #1, #3)
-  - [x] Create `packages/core/package.json` with full exports map and `effect` as peerDep
-  - [x] Create `packages/core/tsconfig.json` extending base
-  - [x] Create `packages/core/tsdown.config.ts` with all 6 entry points
-  - [x] Create `packages/core/vitest.config.ts`
+- [x] Task 2: Scaffold `packages/tranquilload-core` (`@tranquilload/core`) (AC: #1, #3)
+  - [x] Create `packages/tranquilload-core/package.json` with full exports map and `effect` as peerDep
+  - [x] Create `packages/tranquilload-core/tsconfig.json` extending base
+  - [x] Create `packages/tranquilload-core/tsdown.config.ts` with all 6 entry points
+  - [x] Create `packages/tranquilload-core/vitest.config.ts`
 
-- [x] Task 3: Create placeholder source stubs for `packages/core` (AC: #1)
+- [x] Task 3: Create placeholder source stubs for `packages/tranquilload-core` (AC: #1)
   - [x] `src/errors/index.ts` — export placeholder
   - [x] `src/multipart/index.ts` — export placeholder
   - [x] `src/oneshot/index.ts` — export placeholder
@@ -40,19 +40,21 @@ so that I can develop, test, and build both packages with a single toolchain.
   - [x] `src/progress/index.ts` — export placeholder
   - [x] `src/utils/normalize-callback.ts` — export placeholder
   - [x] `src/utils/abort-interop.ts` — export placeholder
+  - [x] `src/scaffold.test.ts` — scaffold vitest placeholder (vitest 3.x requires at least one test file)
 
-- [x] Task 4: Scaffold `packages/adapters` (`@tranquilload/adapters`) (AC: #1, #3)
-  - [x] Create `packages/adapters/package.json` with exports map and `workspace:*` dep on core
-  - [x] Create `packages/adapters/tsconfig.json` extending base
-  - [x] Create `packages/adapters/tsdown.config.ts` with 5 entry points
-  - [x] Create `packages/adapters/vitest.config.ts`
+- [x] Task 4: Scaffold `packages/tranquilload-adapters` (`@tranquilload/adapters`) (AC: #1, #3)
+  - [x] Create `packages/tranquilload-adapters/package.json` with exports map and `workspace:*` dep on core
+  - [x] Create `packages/tranquilload-adapters/tsconfig.json` extending base
+  - [x] Create `packages/tranquilload-adapters/tsdown.config.ts` with 5 entry points
+  - [x] Create `packages/tranquilload-adapters/vitest.config.ts`
 
-- [x] Task 5: Create placeholder source stubs for `packages/adapters` (AC: #1)
+- [x] Task 5: Create placeholder source stubs for `packages/tranquilload-adapters` (AC: #1)
   - [x] `src/sources/from-file.ts`
   - [x] `src/sources/from-node-readable.ts`
   - [x] `src/protocols/s3-multipart-upload.ts`
   - [x] `src/protocols/simple-http-upload.ts`
   - [x] `src/resilience/network-multiplier.ts`
+  - [x] `src/scaffold.test.ts` — scaffold vitest placeholder (vitest 3.x requires at least one test file)
 
 - [x] Task 6: Initialize Changesets for lockstep versioning (AC: #1)
   - [x] Create `.changeset/config.json` with linked packages for lockstep
@@ -60,7 +62,7 @@ so that I can develop, test, and build both packages with a single toolchain.
 - [x] Task 7: Verify full pipeline works (AC: #1, #2)
   - [x] Run `pnpm install`
   - [x] Run `pnpm turbo build` → both packages succeed
-  - [x] Run `pnpm turbo test` → vitest exits 0 (no tests yet, but runner works)
+  - [x] Run `pnpm turbo test` → vitest exits 0 (scaffold.test.ts in each package satisfies vitest 3.x requirement)
   - [x] Run `pnpm turbo build` again → Turborepo cache used (all tasks skipped)
 
 ## Dev Notes
@@ -116,7 +118,7 @@ packages:
 
 ```json
 {
-  "$schema": "https://turbo.build/schema.json",
+  "$schema": "https://turborepo.dev/schema.json",
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -162,11 +164,11 @@ packages:
 
 **Critical:** `isolatedDeclarations: true` — This is TypeScript 5.5+ feature required by tsdown for type generation. Every exported symbol needs an explicit type annotation.
 
-#### `packages/core/package.json`
+#### `packages/tranquilload-core/package.json`
 
 ```json
 {
-  "name": "@tranquilload",
+  "name": "@tranquilload/core",
   "version": "0.1.0",
   "description": "Type-safe upload library built on Effect",
   "license": "MIT",
@@ -211,7 +213,7 @@ packages:
     "effect": "3.19.19",
     "tsdown": "latest",
     "typescript": "^5.5.0",
-    "vitest": "^2.0.0"
+    "vitest": "^3.2.0"
   },
   "scripts": {
     "build": "tsdown",
@@ -224,7 +226,7 @@ packages:
 
 **Critical:** `effect` in `peerDependencies` AND `devDependencies`. PeerDep = what users install. DevDep = what we use during development. Never in `dependencies`.
 
-#### `packages/core/tsconfig.json`
+#### `packages/tranquilload-core/tsconfig.json`
 
 ```json
 {
@@ -237,7 +239,7 @@ packages:
 }
 ```
 
-#### `packages/core/tsdown.config.ts`
+#### `packages/tranquilload-core/tsdown.config.ts`
 
 ```ts
 import { defineConfig } from 'tsdown'
@@ -260,7 +262,7 @@ export default defineConfig({
 
 **Note:** tsdown is ESM-first. The `format: ['esm', 'cjs']` generates both `.js` (ESM) and `.cjs` (CJS) files in `dist/`. The `dts: true` generates `.d.ts` files. The export map in `package.json` must match these exact output filenames.
 
-#### `packages/core/vitest.config.ts`
+#### `packages/tranquilload-core/vitest.config.ts`
 
 ```ts
 import { defineConfig } from 'vitest/config'
@@ -275,14 +277,6 @@ export default defineConfig({
 #### Core Placeholder Source Stubs
 
 Each stub exports an empty placeholder. Since `isolatedDeclarations: true` is required, every export needs an explicit type.
-
-`src/errors/index.ts`:
-```ts
-// Placeholder — implemented in Story 1.2
-export const _placeholder: undefined = undefined
-```
-
-Wait — for a pure scaffold story, we just need tsdown to compile. The simplest valid stub:
 
 `src/errors/index.ts`:
 ```ts
@@ -332,7 +326,7 @@ export const _placeholder: undefined = undefined
 export const _placeholder: undefined = undefined
 ```
 
-#### `packages/adapters/package.json`
+#### `packages/tranquilload-adapters/package.json`
 
 ```json
 {
@@ -370,15 +364,15 @@ export const _placeholder: undefined = undefined
   },
   "peerDependencies": {
     "effect": ">=3.19.19",
-    "@tranquilload": "workspace:*"
+    "@tranquilload/core": "workspace:*"
   },
   "devDependencies": {
     "@effect/vitest": "latest",
-    "@tranquilload": "workspace:*",
+    "@tranquilload/core": "workspace:*",
     "effect": "3.19.19",
     "tsdown": "latest",
     "typescript": "^5.5.0",
-    "vitest": "^2.0.0"
+    "vitest": "^3.2.0"
   },
   "scripts": {
     "build": "tsdown",
@@ -389,9 +383,9 @@ export const _placeholder: undefined = undefined
 }
 ```
 
-**Critical:** `@tranquilload: "workspace:*"` in BOTH `peerDependencies` and `devDependencies`. The workspace reference allows TypeScript path resolution during dev without needing a published package.
+**Critical:** `@tranquilload/core: "workspace:*"` in BOTH `peerDependencies` and `devDependencies`. The workspace reference allows TypeScript path resolution during dev without needing a published package.
 
-#### `packages/adapters/tsconfig.json`
+#### `packages/tranquilload-adapters/tsconfig.json`
 
 ```json
 {
@@ -404,7 +398,7 @@ export const _placeholder: undefined = undefined
 }
 ```
 
-#### `packages/adapters/tsdown.config.ts`
+#### `packages/tranquilload-adapters/tsdown.config.ts`
 
 ```ts
 import { defineConfig } from 'tsdown'
@@ -426,7 +420,7 @@ export default defineConfig({
 
 **Note on output filenames:** The entry key `'from-file'` produces `dist/from-file.js`, `dist/from-file.cjs`, `dist/from-file.d.ts`. These MUST match the export map paths above exactly.
 
-#### `packages/adapters/vitest.config.ts`
+#### `packages/tranquilload-adapters/vitest.config.ts`
 
 ```ts
 import { defineConfig } from 'vitest/config'
@@ -478,7 +472,7 @@ export const _placeholder: undefined = undefined
   "changelog": "@changesets/cli/changelog",
   "commit": false,
   "fixed": [],
-  "linked": [["@tranquilload", "@tranquilload/adapters"]],
+  "linked": [["@tranquilload/core", "@tranquilload/adapters"]],
   "access": "public",
   "baseBranch": "master",
   "updateInternalDependencies": "patch",
@@ -486,7 +480,7 @@ export const _placeholder: undefined = undefined
 }
 ```
 
-**Critical:** `"linked": [["@tranquilload", "@tranquilload/adapters"]]` enforces lockstep versioning — both packages always get the same version bump.
+**Critical:** `"linked": [["@tranquilload/core", "@tranquilload/adapters"]]` enforces lockstep versioning — both packages always get the same version bump.
 
 #### `.gitignore` additions
 
@@ -514,12 +508,13 @@ tranquilload/                         ← existing git root (do NOT modify exist
 ├── turbo.json                        ← NEW: build→test pipeline
 ├── tsconfig.base.json                ← NEW: strict + isolatedDeclarations
 ├── packages/
-│   ├── core/                         ← NEW: @tranquilload
+│   ├── tranquilload-core/            ← NEW: @tranquilload/core
 │   │   ├── package.json
 │   │   ├── tsconfig.json
 │   │   ├── tsdown.config.ts
 │   │   ├── vitest.config.ts
 │   │   └── src/
+│   │       ├── scaffold.test.ts      ← vitest 3.x placeholder (exits 0)
 │   │       ├── errors/index.ts       ← placeholder stub
 │   │       ├── multipart/index.ts    ← placeholder stub
 │   │       ├── oneshot/index.ts      ← placeholder stub
@@ -529,12 +524,13 @@ tranquilload/                         ← existing git root (do NOT modify exist
 │   │       └── utils/
 │   │           ├── normalize-callback.ts  ← placeholder stub
 │   │           └── abort-interop.ts       ← placeholder stub
-│   └── adapters/                     ← NEW: @tranquilload/adapters
+│   └── tranquilload-adapters/        ← NEW: @tranquilload/adapters
 │       ├── package.json
 │       ├── tsconfig.json
 │       ├── tsdown.config.ts
 │       ├── vitest.config.ts
 │       └── src/
+│           ├── scaffold.test.ts      ← vitest 3.x placeholder (exits 0)
 │           ├── sources/
 │           │   ├── from-file.ts           ← placeholder stub
 │           │   └── from-node-readable.ts  ← placeholder stub
@@ -557,7 +553,7 @@ tranquilload/                         ← existing git root (do NOT modify exist
 2. **`isolatedDeclarations: true`** — every exported value/function needs an explicit TypeScript type annotation. Without this, tsdown `.d.ts` generation fails.
 3. **Export map filenames must match tsdown outputs exactly** — key `'from-file'` in tsdown config → `dist/from-file.js`. If there's a mismatch, `require('@tranquilload/adapters/fromFile')` fails at runtime.
 4. **`type: "module"`** in all package.json files — tsdown is ESM-first. Without this, Node.js misidentifies `.js` files.
-5. **`workspace:*` in adapters for `@tranquilload`** — enables local TypeScript path resolution without publishing. Without this, adapters cannot import from core during dev.
+5. **`workspace:*` in adapters for `@tranquilload/core`** — enables local TypeScript path resolution without publishing. Without this, adapters cannot import from core during dev.
 
 ### Testing Notes
 
@@ -573,9 +569,11 @@ pnpm turbo build     # Second run → "FULL TURBO" (all cached)
 
 ### Lessons Learned
 
-- **Node.js ≥ 22 required** — `tsdown@0.21.0` + `rolldown@1.0.0-rc.7` use `process.getBuiltinModule` (Node 21.2+). Node 20 fails.
+- **Node.js ≥ 22 required** — `tsdown@0.21.0` + `rolldown@1.0.0-rc.7` use `process.getBuiltinModule` (Node 21.2+). Node 20 fails. Guard added via `"engines": { "node": ">=22" }` in root `package.json`.
 - **vitest 3.x exits code 1 with no test files** — add a scaffold test rather than `passWithNoTests`.
 - **Export map order matters** — `types` must come before `import`/`require` to avoid bundler warnings.
+- **Directory naming with pnpm scoped packages** — Never name a folder `packages/core` when the package is `@tranquilload/core`: pnpm treats `packages/core/` as a scope directory and creates broken symlinks. Use the full prefix (`tranquilload-core`, `tranquilload-adapters`) to avoid the conflict.
+- **Package name `@tranquilload` is invalid npm** — A bare scope without a sub-path is rejected by npm publish. The core package must be `@tranquilload/core`, not `@tranquilload`.
 
 ### References
 
@@ -602,7 +600,7 @@ claude-sonnet-4-6
 
 ### Completion Notes List
 
-- Monorepo scaffold complete: `@tranquilload` (core) and `@tranquilload/adapters` build to ESM + CJS + `.d.ts` via tsdown 0.21.0 / rolldown 1.0.0-rc.7
+- Monorepo scaffold complete: `@tranquilload/core` and `@tranquilload/adapters` build to ESM + CJS + `.d.ts` via tsdown 0.21.0 / rolldown 1.0.0-rc.7
 - Turborepo pipeline: `build → test` with cache working (FULL TURBO on second run)
 - All 6 core entry points and 5 adapter entry points compile cleanly
 - `tsconfig.base.json` enforces `strict: true` and `isolatedDeclarations: true`
@@ -614,33 +612,35 @@ claude-sonnet-4-6
 - `.gitignore` (modified)
 - `.changeset/config.json`
 - `package.json`
+- `pnpm-lock.yaml`
 - `pnpm-workspace.yaml`
 - `turbo.json`
 - `tsconfig.base.json`
-- `packages/core/package.json`
-- `packages/core/tsconfig.json`
-- `packages/core/tsdown.config.ts`
-- `packages/core/vitest.config.ts`
-- `packages/core/src/scaffold.test.ts`
-- `packages/core/src/errors/index.ts`
-- `packages/core/src/multipart/index.ts`
-- `packages/core/src/oneshot/index.ts`
-- `packages/core/src/pipeline/index.ts`
-- `packages/core/src/services/index.ts`
-- `packages/core/src/progress/index.ts`
-- `packages/core/src/utils/normalize-callback.ts`
-- `packages/core/src/utils/abort-interop.ts`
-- `packages/adapters/package.json`
-- `packages/adapters/tsconfig.json`
-- `packages/adapters/tsdown.config.ts`
-- `packages/adapters/vitest.config.ts`
-- `packages/adapters/src/scaffold.test.ts`
-- `packages/adapters/src/sources/from-file.ts`
-- `packages/adapters/src/sources/from-node-readable.ts`
-- `packages/adapters/src/protocols/s3-multipart-upload.ts`
-- `packages/adapters/src/protocols/simple-http-upload.ts`
-- `packages/adapters/src/resilience/network-multiplier.ts`
+- `packages/tranquilload-core/package.json`
+- `packages/tranquilload-core/tsconfig.json`
+- `packages/tranquilload-core/tsdown.config.ts`
+- `packages/tranquilload-core/vitest.config.ts`
+- `packages/tranquilload-core/src/scaffold.test.ts`
+- `packages/tranquilload-core/src/errors/index.ts`
+- `packages/tranquilload-core/src/multipart/index.ts`
+- `packages/tranquilload-core/src/oneshot/index.ts`
+- `packages/tranquilload-core/src/pipeline/index.ts`
+- `packages/tranquilload-core/src/services/index.ts`
+- `packages/tranquilload-core/src/progress/index.ts`
+- `packages/tranquilload-core/src/utils/normalize-callback.ts`
+- `packages/tranquilload-core/src/utils/abort-interop.ts`
+- `packages/tranquilload-adapters/package.json`
+- `packages/tranquilload-adapters/tsconfig.json`
+- `packages/tranquilload-adapters/tsdown.config.ts`
+- `packages/tranquilload-adapters/vitest.config.ts`
+- `packages/tranquilload-adapters/src/scaffold.test.ts`
+- `packages/tranquilload-adapters/src/sources/from-file.ts`
+- `packages/tranquilload-adapters/src/sources/from-node-readable.ts`
+- `packages/tranquilload-adapters/src/protocols/s3-multipart-upload.ts`
+- `packages/tranquilload-adapters/src/protocols/simple-http-upload.ts`
+- `packages/tranquilload-adapters/src/resilience/network-multiplier.ts`
 
 ## Change Log
 
 - 2026-03-08: Story 1.1 implemented — monorepo scaffold with build/test/cache pipeline (claude-sonnet-4-6)
+- 2026-03-08: Story 1.1 code review — corrected File List paths (tranquilload-core/adapters), package name (@tranquilload/core), vitest ^3.2.0, changeset linked array, turbo schema URL, added pnpm-lock.yaml and scaffold.test.ts to tracking; added engines node>=22 to root package.json; fixed duplicate Dev Notes block; documented directory naming and package name constraints in Lessons Learned (claude-sonnet-4-6)
