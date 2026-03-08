@@ -59,6 +59,11 @@ describe("MaxRetriesExceededError", () => {
     expect(err.partNumber).toBe(7)
     expect(err.totalAttempts).toBe(10)
   })
+  it("preserves cause", () => {
+    const cause = new Error("last attempt failed")
+    const err = new MaxRetriesExceededError(2, 4, cause)
+    expect(err.cause).toBe(cause)
+  })
 })
 
 describe("PresignedUrlError", () => {
@@ -77,6 +82,11 @@ describe("PresignedUrlError", () => {
   it("name equals _tag for logger compat", () => {
     const err = new PresignedUrlError(null)
     expect(err.name).toBe("PresignedUrlError")
+  })
+  it("preserves cause", () => {
+    const cause = new Error("403 Forbidden")
+    const err = new PresignedUrlError(cause)
+    expect(err.cause).toBe(cause)
   })
 })
 
@@ -97,6 +107,11 @@ describe("CompleteUploadError", () => {
     const err = new CompleteUploadError(null)
     expect(err.name).toBe("CompleteUploadError")
   })
+  it("preserves cause", () => {
+    const cause = new Error("500 Internal")
+    const err = new CompleteUploadError(cause)
+    expect(err.cause).toBe(cause)
+  })
 })
 
 describe("AbortError", () => {
@@ -116,6 +131,10 @@ describe("AbortError", () => {
     const err = new AbortError()
     expect(err.name).toBe("AbortError")
   })
+  it("has no cause (abort is intentional, not an error chain)", () => {
+    const err = new AbortError()
+    expect(err.cause).toBeUndefined()
+  })
 })
 
 it("UploadError union is exhaustive", () => {
@@ -126,6 +145,12 @@ it("UploadError union is exhaustive", () => {
       case "PresignedUrlError": return "presigned"
       case "CompleteUploadError": return "complete"
       case "AbortError": return "abort"
+      default: {
+        // If a new variant is added to UploadError without a matching case above,
+        // TypeScript will error here: "Type 'NewVariant' is not assignable to type 'never'"
+        const _exhaustive: never = err
+        return _exhaustive
+      }
     }
   }
   expect(check(new AbortError())).toBe("abort")

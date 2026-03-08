@@ -1,6 +1,6 @@
 # Story 1.2: Error Types Definition
 
-Status: review
+Status: done
 
 ## Story
 
@@ -262,15 +262,17 @@ _None_
 
 - Implemented 5 error classes (`PartUploadError`, `MaxRetriesExceededError`, `PresignedUrlError`, `CompleteUploadError`, `AbortError`) all extending `Error` with `readonly _tag as const` discriminants.
 - Replaced `_placeholder` stub in `src/errors/index.ts` with named re-exports using `.js` extension (NodeNext compliance).
-- 24 tests written covering: `instanceof Error`, `_tag` value, human-readable messages, `name` property, `cause` preservation, field values, and union exhaustiveness.
-- All 25 tests pass (`pnpm turbo test`), build succeeds for both packages (`pnpm turbo build`), zero regressions.
+- 28 tests written covering: `instanceof Error`, `_tag` value, human-readable messages, `name` property, `cause` preservation (all 4 classes with cause field), field values, `AbortError.cause === undefined`, and union exhaustiveness with `default: never` assertion.
+- All 29 tests pass (`pnpm turbo test`), build succeeds for both packages (`pnpm turbo build`), zero regressions.
 
 ### Change Log
 
 - 2026-03-08: Story 1.2 implemented — created `upload-error.ts` with 5 error classes and `UploadError` union, replaced `errors/index.ts` stub, added `upload-error.test.ts` with 24 tests.
+- 2026-03-08: Code review fixes — added `cause` preservation tests for `MaxRetriesExceededError`, `PresignedUrlError`, `CompleteUploadError`; added `AbortError.cause === undefined` test; added `default: never` assertion to exhaustiveness test; corrected test count to 28 (29 total with scaffold). Total: +4 tests.
 
 ### File List
 
 - `packages/tranquilload-core/src/errors/upload-error.ts` (created)
 - `packages/tranquilload-core/src/errors/upload-error.test.ts` (created)
 - `packages/tranquilload-core/src/errors/index.ts` (modified)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (modified)
