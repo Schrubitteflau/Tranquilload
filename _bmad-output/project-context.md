@@ -14,6 +14,13 @@ _This file contains critical rules and patterns that AI agents must follow when 
 
 ---
 
+## Directory Structure (Critical)
+
+- `packages/tranquilload-core/` — package `@tranquilload/core` (NE PAS nommer `packages/core/` : pnpm crée des symlinks brisés avec les scoped packages)
+- `packages/tranquilload-adapters/` — package `@tranquilload/adapters`
+
+Toute référence à `packages/core/` dans les specs est à lire comme `packages/tranquilload-core/`, et `packages/adapters/` comme `packages/tranquilload-adapters/`.
+
 ## Technology Stack & Versions
 
 - **TypeScript** — strict mode, `isolatedDeclarations: true` (requis par tsdown), target ES2022, module NodeNext
@@ -47,8 +54,8 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Constructeur : `super(message)` + `this.name = "NomDeLErreur"` dans chaque classe
 
 **Imports :**
-- Exports granulaires via sous-chemins : `@tranquilload/multipart`, `@tranquilload/oneshot`, etc. — jamais `@tranquilload` seul
-- `@tranquilload/adapters` dépend de `@tranquilload` via `workspace:*` — jamais l'inverse
+- Exports granulaires via sous-chemins : `@tranquilload/core/multipart`, `@tranquilload/core/oneshot`, etc. — jamais `@tranquilload/core` seul
+- `@tranquilload/adapters` dépend de `@tranquilload/core` via `workspace:*` — jamais l'inverse
 - `from-node-readable.ts` est le seul fichier autorisé à importer `node:stream`
 - `web-locks.ts` est le seul fichier autorisé à utiliser `navigator.locks`
 

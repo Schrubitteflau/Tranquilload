@@ -1,0 +1,15 @@
+{
+  "name": "tranquilload-monorepo",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "build": "turbo build",
+    "test": "turbo test",
+    "dev": "turbo dev",
+    "typecheck": "turbo typecheck"
+  },
+  "devDependencies": {
+    "turbo": "latest",
+    "typescript": "^5.5.0"
+  }
+}

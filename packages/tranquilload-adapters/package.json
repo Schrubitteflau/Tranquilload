@@ -1,0 +1,64 @@
+{
+  "name": "@tranquilload/adapters",
+  "version": "0.1.0",
+  "description": "Adapters for Tranquilload (S3, File, Node, HTTP)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Schrubitteflau/Tranquilload.git"
+  },
+  "author": {
+    "name": "Schrubitteflau",
+    "url": "https://github.com/Schrubitteflau"
+  },
+  "bugs": {
+    "url": "https://github.com/Schrubitteflau/Tranquilload/issues"
+  },
+  "homepage": "https://github.com/Schrubitteflau/Tranquilload#readme",
+  "type": "module",
+  "exports": {
+    "./fromFile": {
+      "types": "./dist/from-file.d.ts",
+      "import": "./dist/from-file.js",
+      "require": "./dist/from-file.cjs"
+    },
+    "./fromNodeReadable": {
+      "types": "./dist/from-node-readable.d.ts",
+      "import": "./dist/from-node-readable.js",
+      "require": "./dist/from-node-readable.cjs"
+    },
+    "./s3MultipartUpload": {
+      "types": "./dist/s3-multipart-upload.d.ts",
+      "import": "./dist/s3-multipart-upload.js",
+      "require": "./dist/s3-multipart-upload.cjs"
+    },
+    "./simpleHttpUpload": {
+      "types": "./dist/simple-http-upload.d.ts",
+      "import": "./dist/simple-http-upload.js",
+      "require": "./dist/simple-http-upload.cjs"
+    },
+    "./networkMultiplier": {
+      "types": "./dist/network-multiplier.d.ts",
+      "import": "./dist/network-multiplier.js",
+      "require": "./dist/network-multiplier.cjs"
+    }
+  },
+  "peerDependencies": {
+    "effect": ">=3.19.19",
+    "@tranquilload/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@effect/vitest": "latest",
+    "@tranquilload/core": "workspace:*",
+    "effect": "3.19.19",
+    "tsdown": "latest",
+    "typescript": "^5.5.0",
+    "vitest": "^3.2.0"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "name": "@tranquilload/core",
+  "version": "0.1.0",
+  "description": "Type-safe upload library built on Effect",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Schrubitteflau/Tranquilload.git"
+  },
+  "author": {
+    "name": "Schrubitteflau",
+    "url": "https://github.com/Schrubitteflau"
+  },
+  "bugs": {
+    "url": "https://github.com/Schrubitteflau/Tranquilload/issues"
+  },
+  "homepage": "https://github.com/Schrubitteflau/Tranquilload#readme",
+  "type": "module",
+  "exports": {
+    "./multipart": {
+      "types": "./dist/multipart.d.ts",
+      "import": "./dist/multipart.js",
+      "require": "./dist/multipart.cjs"
+    },
+    "./oneshot": {
+      "types": "./dist/oneshot.d.ts",
+      "import": "./dist/oneshot.js",
+      "require": "./dist/oneshot.cjs"
+    },
+    "./pipeline": {
+      "types": "./dist/pipeline.d.ts",
+      "import": "./dist/pipeline.js",
+      "require": "./dist/pipeline.cjs"
+    },
+    "./services": {
+      "types": "./dist/services.d.ts",
+      "import": "./dist/services.js",
+      "require": "./dist/services.cjs"
+    },
+    "./errors": {
+      "types": "./dist/errors.d.ts",
+      "import": "./dist/errors.js",
+      "require": "./dist/errors.cjs"
+    },
+    "./progress": {
+      "types": "./dist/progress.d.ts",
+      "import": "./dist/progress.js",
+      "require": "./dist/progress.cjs"
+    }
+  },
+  "peerDependencies": {
+    "effect": ">=3.19.19"
+  },
+  "devDependencies": {
+    "@effect/vitest": "latest",
+    "effect": "3.19.19",
+    "tsdown": "latest",
+    "typescript": "^5.5.0",
+    "vitest": "^3.2.0"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  }
+}

@@ -1,6 +1,6 @@
 # Story 1.1: Monorepo Scaffold
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -18,50 +18,50 @@ so that I can develop, test, and build both packages with a single toolchain.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create root monorepo configuration files (AC: #1, #2, #3)
-  - [ ] Create `package.json` (private:true, pnpm scripts, turbo)
-  - [ ] Create `pnpm-workspace.yaml`
-  - [ ] Create `turbo.json` with build→test pipeline and remote caching off
-  - [ ] Create `tsconfig.base.json` with strict + isolatedDeclarations
-  - [ ] Update `.gitignore` (dist, node_modules, .turbo)
+- [x] Task 1: Create root monorepo configuration files (AC: #1, #2, #3)
+  - [x] Create `package.json` (private:true, pnpm scripts, turbo)
+  - [x] Create `pnpm-workspace.yaml`
+  - [x] Create `turbo.json` with build→test pipeline and remote caching off
+  - [x] Create `tsconfig.base.json` with strict + isolatedDeclarations
+  - [x] Update `.gitignore` (dist, node_modules, .turbo)
 
-- [ ] Task 2: Scaffold `packages/core` (`@tranquilload`) (AC: #1, #3)
-  - [ ] Create `packages/core/package.json` with full exports map and `effect` as peerDep
-  - [ ] Create `packages/core/tsconfig.json` extending base
-  - [ ] Create `packages/core/tsdown.config.ts` with all 6 entry points
-  - [ ] Create `packages/core/vitest.config.ts`
+- [x] Task 2: Scaffold `packages/core` (`@tranquilload`) (AC: #1, #3)
+  - [x] Create `packages/core/package.json` with full exports map and `effect` as peerDep
+  - [x] Create `packages/core/tsconfig.json` extending base
+  - [x] Create `packages/core/tsdown.config.ts` with all 6 entry points
+  - [x] Create `packages/core/vitest.config.ts`
 
-- [ ] Task 3: Create placeholder source stubs for `packages/core` (AC: #1)
-  - [ ] `src/errors/index.ts` — export placeholder
-  - [ ] `src/multipart/index.ts` — export placeholder
-  - [ ] `src/oneshot/index.ts` — export placeholder
-  - [ ] `src/pipeline/index.ts` — export placeholder
-  - [ ] `src/services/index.ts` — export placeholder
-  - [ ] `src/progress/index.ts` — export placeholder
-  - [ ] `src/utils/normalize-callback.ts` — export placeholder
-  - [ ] `src/utils/abort-interop.ts` — export placeholder
+- [x] Task 3: Create placeholder source stubs for `packages/core` (AC: #1)
+  - [x] `src/errors/index.ts` — export placeholder
+  - [x] `src/multipart/index.ts` — export placeholder
+  - [x] `src/oneshot/index.ts` — export placeholder
+  - [x] `src/pipeline/index.ts` — export placeholder
+  - [x] `src/services/index.ts` — export placeholder
+  - [x] `src/progress/index.ts` — export placeholder
+  - [x] `src/utils/normalize-callback.ts` — export placeholder
+  - [x] `src/utils/abort-interop.ts` — export placeholder
 
-- [ ] Task 4: Scaffold `packages/adapters` (`@tranquilload/adapters`) (AC: #1, #3)
-  - [ ] Create `packages/adapters/package.json` with exports map and `workspace:*` dep on core
-  - [ ] Create `packages/adapters/tsconfig.json` extending base
-  - [ ] Create `packages/adapters/tsdown.config.ts` with 5 entry points
-  - [ ] Create `packages/adapters/vitest.config.ts`
+- [x] Task 4: Scaffold `packages/adapters` (`@tranquilload/adapters`) (AC: #1, #3)
+  - [x] Create `packages/adapters/package.json` with exports map and `workspace:*` dep on core
+  - [x] Create `packages/adapters/tsconfig.json` extending base
+  - [x] Create `packages/adapters/tsdown.config.ts` with 5 entry points
+  - [x] Create `packages/adapters/vitest.config.ts`
 
-- [ ] Task 5: Create placeholder source stubs for `packages/adapters` (AC: #1)
-  - [ ] `src/sources/from-file.ts`
-  - [ ] `src/sources/from-node-readable.ts`
-  - [ ] `src/protocols/s3-multipart-upload.ts`
-  - [ ] `src/protocols/simple-http-upload.ts`
-  - [ ] `src/resilience/network-multiplier.ts`
+- [x] Task 5: Create placeholder source stubs for `packages/adapters` (AC: #1)
+  - [x] `src/sources/from-file.ts`
+  - [x] `src/sources/from-node-readable.ts`
+  - [x] `src/protocols/s3-multipart-upload.ts`
+  - [x] `src/protocols/simple-http-upload.ts`
+  - [x] `src/resilience/network-multiplier.ts`
 
-- [ ] Task 6: Initialize Changesets for lockstep versioning (AC: #1)
-  - [ ] Create `.changeset/config.json` with linked packages for lockstep
+- [x] Task 6: Initialize Changesets for lockstep versioning (AC: #1)
+  - [x] Create `.changeset/config.json` with linked packages for lockstep
 
-- [ ] Task 7: Verify full pipeline works (AC: #1, #2)
-  - [ ] Run `pnpm install`
-  - [ ] Run `pnpm turbo build` → both packages succeed
-  - [ ] Run `pnpm turbo test` → vitest exits 0 (no tests yet, but runner works)
-  - [ ] Run `pnpm turbo build` again → Turborepo cache used (all tasks skipped)
+- [x] Task 7: Verify full pipeline works (AC: #1, #2)
+  - [x] Run `pnpm install`
+  - [x] Run `pnpm turbo build` → both packages succeed
+  - [x] Run `pnpm turbo test` → vitest exits 0 (no tests yet, but runner works)
+  - [x] Run `pnpm turbo build` again → Turborepo cache used (all tasks skipped)
 
 ## Dev Notes
 
@@ -279,7 +279,7 @@ Each stub exports an empty placeholder. Since `isolatedDeclarations: true` is re
 `src/errors/index.ts`:
 ```ts
 // Placeholder — implemented in Story 1.2
-export type { UploadError } from './upload-error.js'
+export const _placeholder: undefined = undefined
 ```
 
 Wait — for a pure scaffold story, we just need tsdown to compile. The simplest valid stub:
@@ -561,15 +561,21 @@ tranquilload/                         ← existing git root (do NOT modify exist
 
 ### Testing Notes
 
-This story has no business logic, so no `*.test.ts` files are created. The acceptance criteria "vitest runs *.test.ts" is satisfied by vitest finding zero test files and exiting 0.
+This story has no business logic, so no `*.test.ts` files with real assertions are created. A minimal scaffold test is included in each package to ensure vitest runs and exits 0.
 
 **Verify with:**
 ```bash
 pnpm install
 pnpm turbo build     # Both packages must show "Build succeeded"
-pnpm turbo test      # vitest exits 0 even with 0 test files
+pnpm turbo test      # vitest exits 0
 pnpm turbo build     # Second run → "FULL TURBO" (all cached)
 ```
+
+### Lessons Learned
+
+- **Node.js ≥ 22 required** — `tsdown@0.21.0` + `rolldown@1.0.0-rc.7` use `process.getBuiltinModule` (Node 21.2+). Node 20 fails.
+- **vitest 3.x exits code 1 with no test files** — add a scaffold test rather than `passWithNoTests`.
+- **Export map order matters** — `types` must come before `import`/`require` to avoid bundler warnings.
 
 ### References
 
@@ -589,6 +595,52 @@ claude-sonnet-4-6
 
 ### Debug Log References
 
+- Node.js v20 incompatible with tsdown 0.21.0 / rolldown 1.0.0-rc.7 (`process.getBuiltinModule` missing) → upgraded to Node 22
+- pnpm optional dep issue with `@rolldown/binding-linux-x64-gnu` on Node 20 → resolved by Node 22 upgrade
+- vitest 3.x exits code 1 with zero test files → added scaffold test in each package
+- Export map `types` field must precede `import`/`require` → fixed ordering in both package.json files
+
 ### Completion Notes List
 
+- Monorepo scaffold complete: `@tranquilload` (core) and `@tranquilload/adapters` build to ESM + CJS + `.d.ts` via tsdown 0.21.0 / rolldown 1.0.0-rc.7
+- Turborepo pipeline: `build → test` with cache working (FULL TURBO on second run)
+- All 6 core entry points and 5 adapter entry points compile cleanly
+- `tsconfig.base.json` enforces `strict: true` and `isolatedDeclarations: true`
+- `.changeset/config.json` configured for lockstep versioning of both packages
+- Requires Node.js ≥ 22 (tsdown 0.21.0 minimum)
+
 ### File List
+
+- `.gitignore` (modified)
+- `.changeset/config.json`
+- `package.json`
+- `pnpm-workspace.yaml`
+- `turbo.json`
+- `tsconfig.base.json`
+- `packages/core/package.json`
+- `packages/core/tsconfig.json`
+- `packages/core/tsdown.config.ts`
+- `packages/core/vitest.config.ts`
+- `packages/core/src/scaffold.test.ts`
+- `packages/core/src/errors/index.ts`
+- `packages/core/src/multipart/index.ts`
+- `packages/core/src/oneshot/index.ts`
+- `packages/core/src/pipeline/index.ts`
+- `packages/core/src/services/index.ts`
+- `packages/core/src/progress/index.ts`
+- `packages/core/src/utils/normalize-callback.ts`
+- `packages/core/src/utils/abort-interop.ts`
+- `packages/adapters/package.json`
+- `packages/adapters/tsconfig.json`
+- `packages/adapters/tsdown.config.ts`
+- `packages/adapters/vitest.config.ts`
+- `packages/adapters/src/scaffold.test.ts`
+- `packages/adapters/src/sources/from-file.ts`
+- `packages/adapters/src/sources/from-node-readable.ts`
+- `packages/adapters/src/protocols/s3-multipart-upload.ts`
+- `packages/adapters/src/protocols/simple-http-upload.ts`
+- `packages/adapters/src/resilience/network-multiplier.ts`
+
+## Change Log
+
+- 2026-03-08: Story 1.1 implemented — monorepo scaffold with build/test/cache pipeline (claude-sonnet-4-6)
