@@ -5,7 +5,6 @@
     "moduleResolution": "NodeNext",
     "lib": ["ES2022", "DOM"],
     "strict": true,
-    "isolatedDeclarations": true,
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,

@@ -1,2 +1,11 @@
-// Placeholder — implemented in Story 1.3
-export const _placeholder: undefined = undefined
+export {
+  CompressionUnavailableError,
+  CompressionService,
+  CompressionServiceLive,
+} from "./compression-service.js"
+
+export {
+  type LogLevel,
+  LoggerService,
+  LoggerServiceLive,
+} from "./logger-service.js"
