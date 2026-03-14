@@ -46,7 +46,7 @@ development_status:
   1-2-error-types-definition: done
   1-3-effect-services-infrastructure: done
   1-4-core-utility-helpers: done
-  epic-1-retrospective: optional
+  epic-1-retrospective: done
 
   # Epic 2: One-Shot Upload
   epic-2: backlog
