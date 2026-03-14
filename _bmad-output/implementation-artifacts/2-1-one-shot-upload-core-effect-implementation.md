@@ -1,6 +1,6 @@
 # Story 2.1: One-Shot Upload — Core Effect Implementation
 
-Status: review
+Status: done
 
 ## Story
 
@@ -10,7 +10,7 @@ so that the pure Effect logic is isolated, testable, and reusable by the Dual AP
 
 ## Acceptance Criteria
 
-1. **Given** a `ReadableStream<Uint8Array>` and an `upload` user callback, **When** `uploadOnceEffect(options)` is called, **Then** it returns a `Stream<UploadEvent, UploadError, LoggerService>` that emits exactly one `UploadCompleted` event on success. **And** the user callback is normalized via `normalizeCallback` (supports plain value, `Promise`, or `Effect`). **And** if `signal` is provided, `Effect.race` with `fromAbortSignal` is used — never direct `signal.aborted` check.
+1. **Given** a `ReadableStream<Uint8Array>` and an `upload` user callback, **When** `uploadOnceEffect(options)` is called, **Then** it returns a `Stream<UploadEvent, UploadError, LoggerService>` that emits exactly one `UploadCompleted` event on success. **And** the user callback is normalized via `normalizeCallback` (supports plain value, `Promise`, or `Effect`). **And** if `signal` is provided, `Effect.raceFirst` with `fromAbortSignal` is used — never direct `signal.aborted` check (note: `raceFirst` not `race` — see Dev Agent Record debug log for rationale).
 
 2. **Given** the user callback throws or rejects, **When** the upload runs, **Then** the stream fails with a `CompleteUploadError` in the typed error channel, with the original thrown value as `cause`.
 
@@ -393,3 +393,4 @@ claude-sonnet-4-6
 ## Change Log
 
 - 2026-03-14: Implemented Story 2.1 — created `upload-event.ts`, `oneshot/upload.ts`, `oneshot/upload.test.ts`; fixed `project-context.md`. 49 tests pass. Key finding: use `Effect.raceFirst` (not `Effect.race`) for abort interop.
+- 2026-03-14: **Code Review (AI)** — 0 HIGH, 1 MEDIUM fixed (AC #1 text corrected: `Effect.race` → `Effect.raceFirst`). 1 initial HIGH finding (Effect.sync wrapper on logger.log) reclassified as non-issue after deeper analysis. All ACs verified, all tasks [x] confirmed implemented. Build clean, 49/49 tests pass. Status → done.
