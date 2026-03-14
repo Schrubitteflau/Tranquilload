@@ -62,7 +62,7 @@ NFR7: **Progressive adoption without Effect** — All user callbacks can be plai
 - **Effect as peer dependency**: `effect >= 3.19.19` in both packages (reference equality requirement for Context.Tag).
 - **Circuit Breaker**: 3-state machine (Closed → Open → HalfOpen) included in v1, located in `packages/core/src/multipart/circuit-breaker.ts`.
 - **Naming conventions**: kebab-case files, PascalCase types/classes/services, camelCase functions, `SCREAMING_SNAKE_CASE` constants.
-- **Pattern consistency**: All modules must expose Dual API (Promise/ReadableStream + `.effect` escape hatch), normalize callbacks via `normalizeCallback`, use `Effect.race` + `fromAbortSignal` for AbortController interop.
+- **Pattern consistency**: All modules must expose Dual API (Promise/ReadableStream + `.effect` escape hatch), normalize callbacks via `normalizeCallback`, use `Effect.raceFirst` + `fromAbortSignal` for AbortController interop.
 - **Local Effect documentation**: `effect/` repo cloned at project root — must be consulted before web searches.
 
 ### FR Coverage Map
@@ -218,7 +218,7 @@ So that the pure Effect logic is isolated, testable, and reusable by the Dual AP
 **When** `uploadOnceEffect(options)` is called
 **Then** it returns a `Stream<UploadEvent, UploadError, LoggerService>` that emits a `UploadCompleted` event on success
 **And** the user callback is normalized via `normalizeCallback` (supports Promise, plain value, or Effect)
-**And** if `signal` is provided, `Effect.race` with `fromAbortSignal` is used — no direct `signal.aborted` check
+**And** if `signal` is provided, `Effect.raceFirst` with `fromAbortSignal` is used — no direct `signal.aborted` check
 
 **Given** the user callback throws or rejects
 **When** the upload runs
@@ -284,7 +284,7 @@ So that part orchestration, concurrency control, and retry logic are isolated an
 
 **Given** an `AbortSignal` is provided
 **When** `controller.abort()` is called during parallel uploads
-**Then** all in-flight parts are interrupted via `Effect.race` + `fromAbortSignal`
+**Then** all in-flight parts are interrupted via `Effect.raceFirst` + `fromAbortSignal`
 **And** no new parts are started after abort
 
 ### Story 3.3: Multipart Upload — Dual API Entry Point

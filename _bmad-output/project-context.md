@@ -48,6 +48,20 @@ Toute référence à `packages/core/` dans les specs est à lire comme `packages
 - Les `Effect.Ref` sont initialisés dans le scope `Effect.gen`, jamais comme variable de module
 - `Effect.raceFirst` + `fromAbortSignal` pour l'interop AbortController — jamais de `if (signal.aborted) throw`. (`Effect.race` = premier succès ; `Effect.raceFirst` = premier achèvement — c'est `raceFirst` qu'il faut)
 
+**Dual API wrapper — FiberFailure wrapping :**
+- `Effect.runPromise` rejette avec un `FiberFailure` qui wrape l'erreur typée — PAS l'erreur brute. Le consommateur Promise recevrait `FiberFailure` au lieu de `AbortError`
+- Solution : `Effect.runPromiseExit` + `Cause.squash` pour extraire l'erreur brute :
+  ```ts
+  const collected = Stream.runCollect(program).pipe(
+    Effect.map((chunk) => Array.from(chunk)),
+    Effect.runPromiseExit
+  ).then((exit) => {
+    if (Exit.isSuccess(exit)) return exit.value
+    return Promise.reject(Cause.squash(exit.cause))
+  })
+  ```
+- Ce pattern DOIT être utilisé dans tous les Dual API wrappers (`index.ts`) — jamais `Effect.runPromise` directement
+
 **Erreurs :**
 - Chaque variante de `UploadError` extends `Error` ET a un `readonly _tag` literal
 - L'union `UploadError` est fermée — utiliser `Match.tag` ou `switch` exhaustif sur `_tag`

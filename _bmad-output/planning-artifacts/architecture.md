@@ -420,10 +420,10 @@ export const fromAbortSignal = (signal?: AbortSignal): Effect.Effect<never, Abor
     return Effect.sync(() => signal.removeEventListener("abort", handler))
   })
 
-// Usage : Effect.race(uploadPart(...), fromAbortSignal(signal))
+// Usage : Effect.raceFirst(uploadPart(...), fromAbortSignal(signal))
 ```
 
-**Règle :** Jamais de `if (signal.aborted) throw` dans le code Effect. Toujours `Effect.race` avec `fromAbortSignal`.
+**Règle :** Jamais de `if (signal.aborted) throw` dans le code Effect. Toujours `Effect.raceFirst` avec `fromAbortSignal`. (`Effect.race` attend le premier *succès* — si `fromAbortSignal` échoue en premier, `Effect.race` attend encore l'upload, ce qui hang. `Effect.raceFirst` retourne le premier à *terminer*, succès ou échec.)
 
 ---
 
@@ -506,7 +506,7 @@ Tout agent implémentant ce projet DOIT consulter la doc locale en priorité ava
 - Définir Services avec `Context.Tag` + `interface` + `Layer.succeed` dans le même fichier
 - Exposer chaque module avec le Dual API wrapper (Promise/ReadableStream + `.effect`)
 - Normaliser tout callback utilisateur via `normalizeCallback`
-- Utiliser `Effect.race` + `fromAbortSignal` pour l'interop AbortController
+- Utiliser `Effect.raceFirst` + `fromAbortSignal` pour l'interop AbortController
 - Utiliser `kebab-case` pour les fichiers, `PascalCase` pour types/classes/services, `camelCase` pour fonctions
 - Co-localiser les tests `*.test.ts` au fichier testé
 - Utiliser `@effect/vitest` pour tous les tests impliquant Effect
@@ -691,7 +691,7 @@ pnpm changeset publish                 # publier sur npm
 **Pattern Consistency:**
 - `Context.Tag` + `interface` + `Layer.Live` dans le même fichier ↔ structure `services/` ✅
 - `normalizeCallback` couvre tous les cas du Dual API ✅
-- `Effect.race` + `fromAbortSignal` — pattern isolé, réutilisable partout ✅
+- `Effect.raceFirst` + `fromAbortSignal` — pattern isolé, réutilisable partout ✅
 - kebab-case fichiers / PascalCase types / camelCase fonctions — standard TypeScript ✅
 
 **Structure Alignment:**
