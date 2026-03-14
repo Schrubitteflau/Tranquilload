@@ -1,6 +1,5 @@
 import { Cause, Effect, Exit, Stream } from "effect"
-import type { UploadCompleted } from "../progress/upload-event.js"
-import type { UploadEvent } from "../progress/upload-event.js"
+import type { UploadCompleted, UploadEvent } from "../progress/upload-event.js"
 import { LoggerServiceLive } from "../services/logger-service.js"
 import { uploadOnceEffect, type UploadOnceOptions } from "./upload.js"
 

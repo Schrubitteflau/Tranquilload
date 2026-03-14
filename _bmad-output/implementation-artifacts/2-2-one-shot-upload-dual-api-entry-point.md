@@ -1,6 +1,6 @@
 # Story 2.2: One-Shot Upload — Dual API Entry Point
 
-Status: review
+Status: done
 
 ## Story
 
@@ -369,3 +369,4 @@ claude-sonnet-4-6
 ## Change Log
 
 - 2026-03-14: Implemented `uploadOnce` Dual API entry point and `index.test.ts` (4 tests). 53 tests total, 0 regressions.
+- 2026-03-14: **Code Review (AI)** — 0 HIGH, 0 MEDIUM, 1 LOW (merged duplicate import). All ACs verified, all tasks confirmed done. Status → done.
