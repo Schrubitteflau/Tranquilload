@@ -23,7 +23,7 @@ Toute référence à `packages/core/` dans les specs est à lire comme `packages
 
 ## Technology Stack & Versions
 
-- **TypeScript** — strict mode, `isolatedDeclarations: true` (requis par tsdown), target ES2022, module NodeNext
+- **TypeScript** — strict mode, `declaration: true` (pas `isolatedDeclarations` — incompatible avec `Context.Tag` d'Effect, TS9021), target ES2022, module NodeNext
 - **effect** `3.19.19` — peer dependency dans les deux packages. Ne jamais bundler deux copies : Context.Tag repose sur l'égalité de référence
 - **tsdown** — build ESM + CJS + `.d.ts` via Oxc. Sorties : `dist/esm/`, `dist/cjs/`, `dist/types/`. Successeur de tsup (tsup est abandonné, ne pas l'utiliser)
 - **pnpm workspaces** — monorepo 2 packages. Référencer core depuis adapters via `workspace:*`
@@ -38,7 +38,7 @@ Toute référence à `packages/core/` dans les specs est à lire comme `packages
 ### Language-Specific Rules
 
 **TypeScript :**
-- `isolatedDeclarations: true` est obligatoire — chaque export public doit avoir une annotation de type explicite (pas d'inférence pour les exports)
+- `declaration: true` dans `tsconfig.base.json` — `isolatedDeclarations` est retiré (incompatible avec `Context.Tag`). Les annotations de type explicites sur les exports publics sont une bonne pratique mais l'inférence est permise
 - Pas de `any` — le canal d'erreur Effect est typé, les erreurs sont une union fermée exhaustive
 - `globalThis` uniquement dans `packages/core` — jamais `window`, jamais `process`
 
@@ -46,7 +46,7 @@ Toute référence à `packages/core/` dans les specs est à lire comme `packages
 - Jamais de `try/catch` dans le code Effect — utiliser `Effect.tryPromise({ try, catch })` ou `Effect.try({ try, catch })`
 - Jamais de `.then()` dans le code Effect — tout callback utilisateur passe par `normalizeCallback`
 - Les `Effect.Ref` sont initialisés dans le scope `Effect.gen`, jamais comme variable de module
-- `Effect.race` + `fromAbortSignal` pour l'interop AbortController — jamais de `if (signal.aborted) throw`
+- `Effect.raceFirst` + `fromAbortSignal` pour l'interop AbortController — jamais de `if (signal.aborted) throw`. (`Effect.race` = premier succès ; `Effect.raceFirst` = premier achèvement — c'est `raceFirst` qu'il faut)
 
 **Erreurs :**
 - Chaque variante de `UploadError` extends `Error` ET a un `readonly _tag` literal
@@ -162,7 +162,7 @@ Toute référence à `packages/core/` dans les specs est à lire comme `packages
 **Anti-patterns absolus :**
 - ❌ `try/catch` ou `.then()` dans du code Effect interne — toujours `Effect.tryPromise` / `Effect.try`
 - ❌ Appeler un callback utilisateur directement — toujours via `normalizeCallback`
-- ❌ `if (signal.aborted) throw` — toujours `Effect.race(..., fromAbortSignal(signal))`
+- ❌ `if (signal.aborted) throw` — toujours `Effect.raceFirst(uploadEffect, fromAbortSignal(signal))` (pas `Effect.race` : attend le premier succès, pas le premier achèvement)
 - ❌ `Effect.Ref` comme variable de module — toujours initialisé dans `Effect.gen`
 - ❌ `import { something } from "node:stream"` hors de `from-node-readable.ts`
 - ❌ `window.xxx` ou `process.xxx` dans `packages/core` — uniquement `globalThis`

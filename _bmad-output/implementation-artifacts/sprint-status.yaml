@@ -34,6 +34,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-14
+last_updated: 2026-03-14  # updated: 2-1 → in-progress
 project: Tranquilload
 project_key: NOKEY
 tracking_system: file-system
@@ -49,8 +50,8 @@ development_status:
   epic-1-retrospective: done
 
   # Epic 2: One-Shot Upload
-  epic-2: backlog
-  2-1-one-shot-upload-core-effect-implementation: backlog
+  epic-2: in-progress
+  2-1-one-shot-upload-core-effect-implementation: review
   2-2-one-shot-upload-dual-api-entry-point: backlog
   epic-2-retrospective: optional
 
