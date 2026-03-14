@@ -1,6 +1,6 @@
 # Story 1.4: Core Utility Helpers
 
-Status: review
+Status: done
 
 ## Story
 
