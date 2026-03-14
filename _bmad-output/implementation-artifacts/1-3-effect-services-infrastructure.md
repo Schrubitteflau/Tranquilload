@@ -1,6 +1,6 @@
 # Story 1.3: Effect Services Infrastructure
 
-Status: review
+Status: done
 
 ## Story
 
@@ -227,7 +227,9 @@ claude-sonnet-4-6
 - `packages/tranquilload-core/src/services/logger-service.test.ts` (created)
 - `packages/tranquilload-core/src/services/index.ts` (modified)
 - `tsconfig.base.json` (modified — removed `isolatedDeclarations: true`)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (modified — story status set to review)
 
 ### Change Log
 
 - 2026-03-14: Implemented CompressionService and LoggerService with Effect Layers, tests, and services index re-exports. Removed `isolatedDeclarations: true` from tsconfig.base.json (incompatible with Effect Context.Tag class pattern).
+- 2026-03-14: Code review (Opus 4.6) — Fixed compression-service.test.ts: strengthened typed error assertion to validate CompressionUnavailableError via Cause.failureOption (was only checking Failure _tag). Added sprint-status.yaml to File List. Status → done.

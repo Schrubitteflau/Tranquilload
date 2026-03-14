@@ -1,5 +1,5 @@
 import { it, describe, expect } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { Cause, Effect, Layer } from "effect"
 import {
   CompressionService,
   CompressionServiceLive,
@@ -7,7 +7,7 @@ import {
 } from "./compression-service.js"
 
 describe("CompressionService", () => {
-  it.effect("CompressionServiceLive fails with typed error when CompressionStream is absent", () =>
+  it.effect("CompressionServiceLive fails with typed CompressionUnavailableError when CompressionStream is absent", () =>
     Effect.gen(function* () {
       const AbsentLayer: Layer.Layer<CompressionService, CompressionUnavailableError> =
         Layer.effect(CompressionService, Effect.fail(new CompressionUnavailableError()))
@@ -21,8 +21,13 @@ describe("CompressionService", () => {
 
       expect(result._tag).toBe("Failure")
       if (result._tag === "Failure") {
-        const defect = result.cause
-        expect(defect).toBeDefined()
+        const failure = Cause.failureOption(result.cause)
+        expect(failure._tag).toBe("Some")
+        if (failure._tag === "Some") {
+          expect(failure.value).toBeInstanceOf(CompressionUnavailableError)
+          expect(failure.value._tag).toBe("CompressionUnavailableError")
+          expect(failure.value.message).toBe("globalThis.CompressionStream is not available in this environment")
+        }
       }
     })
   )
