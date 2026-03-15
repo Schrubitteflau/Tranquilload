@@ -47,7 +47,7 @@ describe("CompressionService", () => {
       let calledWith: ReadableStream<Uint8Array> | null = null
 
       const TestLayer: Layer.Layer<CompressionService> = Layer.succeed(CompressionService, {
-        compress: (stream: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> => {
+        compress: (stream: ReadableStream<Uint8Array>, _algorithm: string): ReadableStream<Uint8Array> => {
           calledWith = stream
           return mockStream
         },
@@ -56,7 +56,7 @@ describe("CompressionService", () => {
       const inputStream = new ReadableStream<Uint8Array>()
       const result = yield* Effect.provide(
         Effect.flatMap(CompressionService, (svc) =>
-          Effect.sync(() => svc.compress(inputStream))
+          Effect.sync(() => svc.compress(inputStream, "deflate-raw"))
         ),
         TestLayer
       )
