@@ -1,6 +1,6 @@
 # Story 4.3: Pipeline Integration with Upload Functions
 
-Status: review
+Status: done
 
 ## Story
 
@@ -367,7 +367,7 @@ so that transforms are applied transparently to the stream before chunking or up
 
 - [x] Task 7: Build & tests pass
   - [x]`pnpm turbo build` — no errors, `compose` overloads exported correctly from `@tranquilload/pipeline`
-  - [x]`pnpm turbo test` — all existing 85 core + 1 adapter tests pass + 5 new tests (1 middleware + 2 multipart + 2 oneshot) = **90 core + 1 adapter**
+  - [x]`pnpm turbo test` — all existing 85 core + 1 adapter tests pass + 7 new tests (2 middleware + 3 multipart + 2 oneshot) = **92 core + 1 adapter**
   - [x]`pnpm turbo typecheck` — no new TS errors introduced by story 4.3 changes (pre-existing errors in oneshot tests are unrelated — do not fix them, do not introduce new ones)
 
 ## Dev Notes
