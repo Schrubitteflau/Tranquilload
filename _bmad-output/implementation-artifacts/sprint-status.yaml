@@ -34,7 +34,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-14
-last_updated: 2026-03-15  # updated: 4-1-pipeline-middleware-infrastructure → review
+last_updated: 2026-03-15  # updated: 4-1-pipeline-middleware-infrastructure → done
 project: Tranquilload
 project_key: NOKEY
 tracking_system: file-system
@@ -65,7 +65,7 @@ development_status:
 
   # Epic 4: Transformation Pipeline & Compression
   epic-4: in-progress
-  4-1-pipeline-middleware-infrastructure: review
+  4-1-pipeline-middleware-infrastructure: done
   4-2-compression-transform: backlog
   4-3-pipeline-integration-with-upload-functions: backlog
   epic-4-retrospective: optional

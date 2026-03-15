@@ -1,6 +1,6 @@
 # Story 4.1: Pipeline Middleware Infrastructure
 
-Status: review
+Status: done
 
 ## Story
 
