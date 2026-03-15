@@ -5,3 +5,5 @@ export type {
   UploadCompleted,
   CircuitOpen,
 } from "./upload-event.js"
+
+export type { Progress } from "../multipart/index.js"
