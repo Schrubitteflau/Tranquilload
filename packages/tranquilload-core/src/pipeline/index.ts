@@ -1,2 +1,2 @@
-// Placeholder — implemented in Epic 4
-export const _placeholder: undefined = undefined
+export type { Transform } from "./middleware.js"
+export { compose } from "./middleware.js"
