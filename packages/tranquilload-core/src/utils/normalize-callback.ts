@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 
 export const normalizeCallback = <A, E = never>(
-  fn: (() => A) | (() => Promise<A>) | (() => Effect.Effect<A, E>)
+  fn: () => A | Promise<A> | Effect.Effect<A, E>
 ): Effect.Effect<A, E | unknown> =>
   Effect.suspend((): Effect.Effect<A, E | unknown> => {
     let result: A | Promise<A> | Effect.Effect<A, E>
