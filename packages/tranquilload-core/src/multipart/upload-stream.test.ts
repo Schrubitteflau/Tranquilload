@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Ref, Schedule, Stream } from "effect"
-import { AbortError, CompleteUploadError, MaxRetriesExceededError, PartUploadError } from "../errors/upload-error.js"
+import { Cause, Effect, Ref, Schedule, Stream } from "effect"
+import { AbortError, CircuitOpenError, CompleteUploadError, MaxRetriesExceededError, PartUploadError } from "../errors/upload-error.js"
+import type { UploadEvent } from "../progress/upload-event.js"
 import { LoggerServiceLive } from "../services/logger-service.js"
 import { uploadMultipartEffect, type CompletedPart } from "./upload-stream.js"
 
@@ -163,6 +164,41 @@ describe("uploadMultipartEffect", () => {
       }).pipe(Effect.flip)
 
       expect(result).toBeInstanceOf(AbortError)
+    })
+  )
+})
+
+describe("uploadMultipartEffect with circuitBreaker", () => {
+  it.effect("opens circuit after threshold consecutive failures, emits CircuitOpen event", () =>
+    Effect.gen(function* () {
+      const received: UploadEvent[] = []
+
+      // threshold=1: circuit opens on the very first part failure
+      // (with unbounded concurrency, only 1 part completes its failure cycle
+      // before Stream.mapEffect terminates the stream)
+      const stream = uploadMultipartEffect({
+        stream: fromBytes(new Uint8Array(30).fill(1)),
+        chunkSize: 10,
+        maxConcurrency: 1,
+        uploadPart: () => Effect.fail(new PartUploadError(0, 1, new Error("network error"))),
+        completeUpload: () => {},
+        retrySchedule: Schedule.once,
+        circuitBreaker: { threshold: 1, cooldown: 5000 },
+      })
+
+      const exit = yield* Stream.runForEach(
+        stream,
+        (event) => Effect.sync(() => received.push(event))
+      ).pipe(Effect.exit, Effect.provide(LoggerServiceLive))
+
+      expect(exit._tag).toBe("Failure")
+
+      const circuitOpenEvent = received.find(e => e._tag === "CircuitOpen")
+      expect(circuitOpenEvent).toBeDefined()
+      expect(circuitOpenEvent!.failedParts).toBe(1)
+
+      const err = Cause.squash((exit as any).cause)
+      expect(err).toBeInstanceOf(CircuitOpenError)
     })
   )
 })

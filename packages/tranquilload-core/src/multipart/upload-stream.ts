@@ -1,10 +1,11 @@
-import { Effect, Ref, Schedule, Stream } from "effect"
+import { Cause, Effect, Exit, Ref, Schedule, Stream } from "effect"
 import type { UploadError } from "../errors/upload-error.js"
-import { CompleteUploadError, MaxRetriesExceededError, PartUploadError } from "../errors/upload-error.js"
-import type { PartCompleted, UploadCompleted, UploadEvent } from "../progress/upload-event.js"
+import { CircuitOpenError, CompleteUploadError, MaxRetriesExceededError, PartUploadError } from "../errors/upload-error.js"
+import type { CircuitOpen, PartCompleted, UploadCompleted, UploadEvent } from "../progress/upload-event.js"
 import { LoggerService } from "../services/logger-service.js"
 import { fromAbortSignal } from "../utils/abort-interop.js"
 import { normalizeCallback } from "../utils/normalize-callback.js"
+import { makeCircuitBreaker, type CircuitBreakerConfig } from "./circuit-breaker.js"
 import { chunkStream } from "./chunk-stream.js"
 
 export interface CompletedPart {
@@ -25,6 +26,7 @@ export interface UploadMultipartOptions {
   readonly maxConcurrency?: number
   readonly signal?: AbortSignal
   readonly retrySchedule?: Schedule.Schedule<unknown, PartUploadError>
+  readonly circuitBreaker?: CircuitBreakerConfig
 }
 
 const DEFAULT_MAX_CONCURRENCY = 4
@@ -52,6 +54,9 @@ export const uploadMultipartEffect = (
       const logger = yield* LoggerService
       const semaphore = yield* Effect.makeSemaphore(maxConcurrency)
       const refParts = yield* Ref.make<CompletedPart[]>([])
+      const breaker = options.circuitBreaker
+        ? yield* makeCircuitBreaker(options.circuitBreaker)
+        : null
 
       const makeUploadOne = (
         partNumber: number,
@@ -105,13 +110,48 @@ export const uploadMultipartEffect = (
         Stream.zipWithIndex,
         Stream.mapEffect(
           ([chunk, idx]) => {
-            const partEffect = semaphore.withPermits(1)(
-              makeUploadOne(Number(idx) + 1, chunk)
-            )
+            const partNumber = Number(idx) + 1
+
+            if (!breaker) {
+              const partEffect = semaphore.withPermits(1)(
+                makeUploadOne(partNumber, chunk)
+              )
+              return signal ? Effect.raceFirst(partEffect, fromAbortSignal(signal)) : partEffect
+            }
+
+            const partEffect = Effect.gen(function* () {
+              yield* breaker.guard
+              return yield* semaphore.withPermits(1)(
+                Effect.gen(function* () {
+                  const exit = yield* Effect.exit(makeUploadOne(partNumber, chunk))
+                  if (Exit.isSuccess(exit)) {
+                    yield* breaker.onSuccess
+                    return exit.value
+                  }
+                  const circuitEvent = yield* breaker.onFailure
+                  if (circuitEvent !== null) {
+                    return yield* Effect.fail(new CircuitOpenError(circuitEvent.failedParts))
+                  }
+                  return yield* Effect.fail(Cause.squash(exit.cause) as UploadError)
+                })
+              )
+            })
+
             return signal ? Effect.raceFirst(partEffect, fromAbortSignal(signal)) : partEffect
           },
           { concurrency: "unbounded" }
-        )
+        ),
+        Stream.catchAll((err: UploadError): Stream.Stream<UploadEvent, UploadError, never> => {
+          if (breaker && err._tag === "CircuitOpenError") {
+            const event: UploadEvent = {
+              _tag: "CircuitOpen",
+              failedParts: err.failedParts,
+              timestamp: Date.now(),
+            }
+            return Stream.concat(Stream.succeed(event), Stream.fail(err))
+          }
+          return Stream.fail(err)
+        })
       )
 
       const finalEffect: Effect.Effect<UploadEvent, UploadError, never> = Effect.gen(

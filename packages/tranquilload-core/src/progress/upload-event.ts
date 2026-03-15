@@ -13,5 +13,11 @@ export interface PartCompleted {
   readonly timestamp: number
 }
 
+export interface CircuitOpen {
+  readonly _tag: "CircuitOpen"
+  readonly failedParts: number
+  readonly timestamp: number
+}
+
 // Minimal type — Story 5.1 will expand to full discriminated union
-export type UploadEvent = UploadCompleted | PartCompleted
+export type UploadEvent = UploadCompleted | PartCompleted | CircuitOpen

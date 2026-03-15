@@ -51,9 +51,19 @@ export class AbortError extends Error {
   }
 }
 
+export class CircuitOpenError extends Error {
+  readonly _tag = "CircuitOpenError" as const
+
+  constructor(readonly failedParts: number) {
+    super(`Circuit breaker opened after ${failedParts} consecutive part failures`)
+    this.name = "CircuitOpenError"
+  }
+}
+
 export type UploadError =
   | PartUploadError
   | MaxRetriesExceededError
   | PresignedUrlError
   | CompleteUploadError
   | AbortError
+  | CircuitOpenError

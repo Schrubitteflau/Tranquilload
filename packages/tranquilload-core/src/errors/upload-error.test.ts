@@ -5,6 +5,7 @@ import {
   PresignedUrlError,
   CompleteUploadError,
   AbortError,
+  CircuitOpenError,
   type UploadError,
 } from './upload-error.js'
 
@@ -145,6 +146,7 @@ it("UploadError union is exhaustive", () => {
       case "PresignedUrlError": return "presigned"
       case "CompleteUploadError": return "complete"
       case "AbortError": return "abort"
+      case "CircuitOpenError": return "circuitOpen"
       default: {
         // If a new variant is added to UploadError without a matching case above,
         // TypeScript will error here: "Type 'NewVariant' is not assignable to type 'never'"
@@ -158,4 +160,5 @@ it("UploadError union is exhaustive", () => {
   expect(check(new CompleteUploadError(null))).toBe("complete")
   expect(check(new PartUploadError(1, 1, null))).toBe("part")
   expect(check(new MaxRetriesExceededError(1, 1, null))).toBe("maxRetries")
+  expect(check(new CircuitOpenError(3))).toBe("circuitOpen")
 })
