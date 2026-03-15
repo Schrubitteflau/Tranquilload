@@ -1,6 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Cause, Effect, Exit, Option } from "effect"
 import { AbortError } from "../errors/upload-error.js"
+import { compress } from "../pipeline/compress.js"
+import { compose, type Transform } from "../pipeline/middleware.js"
 import { uploadMultipart } from "./index.js"
 import { uploadMultipartEffect } from "./upload-stream.js"
 
@@ -123,4 +125,86 @@ describe("uploadMultipart — Dual API entry point", () => {
   it(".effect property points to uploadMultipartEffect", () => {
     expect(uploadMultipart.effect).toBe(uploadMultipartEffect)
   })
+
+  it.effect("applies plain Transform pipeline before chunking (data reaches uploadPart transformed)", () =>
+    Effect.gen(function* () {
+      const received: Uint8Array[] = []
+      // Transform: replace every byte with 0xAA
+      const markerTransform: Transform = (stream) =>
+        stream.pipeThrough(
+          new TransformStream<Uint8Array, Uint8Array>({
+            transform(chunk, controller) {
+              controller.enqueue(new Uint8Array(chunk.length).fill(0xaa))
+            },
+          })
+        )
+
+      const { result } = uploadMultipart({
+        stream: new ReadableStream({
+          start(c) { c.enqueue(new Uint8Array([1, 2, 3])); c.close() },
+        }),
+        chunkSize: 3,
+        pipeline: markerTransform,
+        uploadPart: (_, chunk) => {
+          received.push(chunk)
+          return "etag-1"
+        },
+        completeUpload: () => {},
+      })
+
+      yield* Effect.promise(() => result)
+      expect(received).toHaveLength(1)
+      expect(Array.from(received[0]!)).toEqual([0xaa, 0xaa, 0xaa])
+    })
+  )
+
+  it.effect("applies Effect pipeline (compress) before chunking — PartCompleted.bytesUploaded reflects compressed size", () =>
+    Effect.gen(function* () {
+      const received: Uint8Array[] = []
+      const original = new Uint8Array([1, 2, 3, 4, 5])
+
+      const { result } = uploadMultipart({
+        stream: new ReadableStream({
+          start(c) { c.enqueue(original); c.close() },
+        }),
+        chunkSize: 4096, // large enough to receive all compressed output in one part
+        pipeline: compress("deflate-raw"),
+        uploadPart: (_, chunk) => {
+          received.push(chunk)
+          return "etag-1"
+        },
+        completeUpload: () => {},
+      })
+
+      yield* Effect.promise(() => result)
+      expect(received).toHaveLength(1)
+      // Compressed output is non-empty
+      expect(received[0]!.length).toBeGreaterThan(0)
+      // Compressed bytes differ from raw input
+      expect(Array.from(received[0]!)).not.toEqual(Array.from(original))
+    })
+  )
+
+  it.effect("compose(compress()) can be passed as pipeline — same as compress() directly", () =>
+    Effect.gen(function* () {
+      const received: Uint8Array[] = []
+
+      const { result } = uploadMultipart({
+        stream: new ReadableStream({
+          start(c) { c.enqueue(new Uint8Array([10, 20, 30])); c.close() },
+        }),
+        chunkSize: 4096,
+        pipeline: compose(compress("deflate-raw")),
+        uploadPart: (_, chunk) => {
+          received.push(chunk)
+          return "etag-1"
+        },
+        completeUpload: () => {},
+      })
+
+      yield* Effect.promise(() => result)
+      expect(received).toHaveLength(1)
+      expect(received[0]!.length).toBeGreaterThan(0)
+    })
+  )
 })

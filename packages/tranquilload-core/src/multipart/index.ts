@@ -1,5 +1,7 @@
 import { Cause, Effect, Exit, Option, Ref, Stream } from "effect"
 import type { UploadCompleted, UploadEvent } from "../progress/upload-event.js"
+import type { Transform } from "../pipeline/middleware.js"
+import { CompressionServiceLive } from "../services/compression-service.js"
 import { LoggerServiceLive } from "../services/logger-service.js"
 import { uploadMultipartEffect, type CompletedPart, type UploadMultipartOptions } from "./upload-stream.js"
 
@@ -13,6 +15,7 @@ export interface Progress {
 
 export interface MultipartPublicOptions extends UploadMultipartOptions {
   readonly totalBytes?: number
+  readonly pipeline?: Transform | Effect.Effect<Transform, any, any>
 }
 
 export const uploadMultipart = (
@@ -29,29 +32,45 @@ export const uploadMultipart = (
     })
   )
 
-  const program = uploadMultipartEffect(options).pipe(
-    Stream.tap((event) => {
-      if (event._tag === "PartCompleted") {
-        return Ref.update(refProgress, (p) => ({
-          ...p,
-          bytesUploaded: p.bytesUploaded + event.bytesUploaded,
-        }))
+  const collected: Promise<ReadonlyArray<UploadEvent>> = (async () => {
+    // Step 1: resolve pipeline to get the processed stream
+    let processedStream = options.stream
+    if (options.pipeline !== undefined) {
+      if (typeof options.pipeline === "function") {
+        processedStream = options.pipeline(options.stream)
+      } else {
+        // Effect pipeline — resolve with CompressionServiceLive
+        const transform = await Effect.runPromise(
+          Effect.provide(
+            options.pipeline as Effect.Effect<Transform, any, never>,
+            CompressionServiceLive
+          )
+        )
+        processedStream = transform(options.stream)
       }
-      return Effect.void
-    }),
-    Stream.provideLayer(LoggerServiceLive)
-  )
+    }
 
-  // Single execution — collect all events to completion
-  // Effect.runPromiseExit + Cause.squash ensures result rejects with typed error (AbortError, etc.)
-  // rather than a FiberFailure wrapper
-  const collected: Promise<ReadonlyArray<UploadEvent>> = Stream.runCollect(program).pipe(
-    Effect.map((chunk) => Array.from(chunk)),
-    Effect.runPromiseExit
-  ).then((exit) => {
+    // Step 2: run upload with processedStream
+    const program = uploadMultipartEffect({ ...options, stream: processedStream }).pipe(
+      Stream.tap((event) => {
+        if (event._tag === "PartCompleted") {
+          return Ref.update(refProgress, (p) => ({
+            ...p,
+            bytesUploaded: p.bytesUploaded + event.bytesUploaded,
+          }))
+        }
+        return Effect.void
+      }),
+      Stream.provideLayer(LoggerServiceLive)
+    )
+
+    const exit = await Stream.runCollect(program).pipe(
+      Effect.map((chunk) => Array.from(chunk)),
+      Effect.runPromiseExit
+    )
     if (Exit.isSuccess(exit)) return exit.value
     return Promise.reject(Cause.squash(exit.cause))
-  })
+  })()
 
   // events: ReadableStream built from collected array; closes cleanly on error
   const events = new ReadableStream<UploadEvent>({

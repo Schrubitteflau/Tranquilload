@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { compose } from "./middleware.js"
+import { it as effectIt } from "@effect/vitest"
+import { Effect } from "effect"
+import { compose, type Transform } from "./middleware.js"
+import { compress } from "./compress.js"
+import { CompressionServiceLive } from "../services/compression-service.js"
 
 // Helper: creates a ReadableStream emitting a single Uint8Array chunk
 function makeStream(data: Uint8Array): ReadableStream<Uint8Array> {
@@ -61,4 +65,38 @@ describe("compose", () => {
     compose(t1, t2, t3)(makeStream(new Uint8Array([1])))
     expect(order).toEqual(["t1", "t2", "t3"])
   })
+
+  it("compose with plain transforms is still a plain Transform function", () => {
+    const t1: Transform = (s) => s
+    const t2: Transform = (s) => s
+    const composed = compose(t1, t2)
+    expect(typeof composed).toBe("function")
+  })
+
+  effectIt.effect("compose(compress()) returns an Effect that resolves to a working Transform", () =>
+    Effect.gen(function* () {
+      const transformEffect = compose(compress("deflate-raw"))
+      // Confirm it's an Effect (has .pipe method, not a function)
+      expect(typeof transformEffect).not.toBe("function")
+
+      // Resolve it with CompressionServiceLive
+      const transform = yield* Effect.provide(transformEffect, CompressionServiceLive)
+      expect(typeof transform).toBe("function")
+
+      // Apply the transform to a stream
+      const input = new ReadableStream<Uint8Array>({
+        start(c) { c.enqueue(new Uint8Array([1, 2, 3])); c.close() }
+      })
+      const output = transform(input)
+      const reader = output.getReader()
+      const chunks: Uint8Array[] = []
+      while (true) {
+        const { done, value } = yield* Effect.promise(() => reader.read())
+        if (done) break
+        chunks.push(value)
+      }
+      const totalBytes = chunks.reduce((acc, c) => acc + c.length, 0)
+      expect(totalBytes).toBeGreaterThan(0)
+    })
+  )
 })

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Cause, Effect, Exit } from "effect"
 import { AbortError } from "../errors/upload-error.js"
+import { compress } from "../pipeline/compress.js"
+import type { Transform } from "../pipeline/middleware.js"
 import { uploadOnce } from "./index.js"
 
 // Helper: read all events from the ReadableStream
@@ -96,6 +98,55 @@ describe("uploadOnce — Dual API entry point", () => {
       })
       // Stream has a pipe method (duck-type check — we don't run it)
       expect(typeof stream.pipe).toBe("function")
+    })
+  )
+
+  it.effect("applies plain Transform pipeline — upload callback receives transformed stream", () =>
+    Effect.gen(function* () {
+      let receivedStream: ReadableStream<Uint8Array> | undefined
+
+      // Pipeline that returns a known marker stream
+      const markerStream = new ReadableStream<Uint8Array>({ start(c) { c.close() } })
+      const pipeline: Transform = () => markerStream
+
+      const { result } = uploadOnce({
+        stream: new ReadableStream({ start(c) { c.close() } }),
+        pipeline,
+        upload: (s) => {
+          receivedStream = s
+          return Promise.resolve()
+        },
+      })
+
+      yield* Effect.promise(() => result)
+      // upload callback received the transformed stream (identity check)
+      expect(receivedStream).toBe(markerStream)
+    })
+  )
+
+  it.effect("applies Effect pipeline (compress) — upload callback receives compressed bytes", () =>
+    Effect.gen(function* () {
+      let receivedByteCount = 0
+      const original = new Uint8Array([1, 2, 3, 4, 5])
+
+      const { result } = uploadOnce({
+        stream: new ReadableStream({
+          start(c) { c.enqueue(original); c.close() },
+        }),
+        pipeline: compress("deflate-raw"),
+        upload: async (stream) => {
+          const reader = stream.getReader()
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            receivedByteCount += value.length
+          }
+        },
+      })
+
+      yield* Effect.promise(() => result)
+      // Compressed output is non-empty
+      expect(receivedByteCount).toBeGreaterThan(0)
     })
   )
 })
