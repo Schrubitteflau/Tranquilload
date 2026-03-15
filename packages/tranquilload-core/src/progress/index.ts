@@ -1,2 +1,7 @@
-// Placeholder — implemented in Epic 5
-export const _placeholder: undefined = undefined
+export type {
+  UploadEvent,
+  PartCompleted,
+  ProgressTick,
+  UploadCompleted,
+  CircuitOpen,
+} from "./upload-event.js"

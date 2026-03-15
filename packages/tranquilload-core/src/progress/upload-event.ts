@@ -1,3 +1,5 @@
+import { Option } from "effect"
+
 export interface UploadCompleted {
   readonly _tag: "UploadCompleted"
   readonly uploadId: string
@@ -19,5 +21,11 @@ export interface CircuitOpen {
   readonly timestamp: number
 }
 
-// Minimal type — Story 5.1 will expand to full discriminated union
-export type UploadEvent = UploadCompleted | PartCompleted | CircuitOpen
+export interface ProgressTick {
+  readonly _tag: "ProgressTick"
+  readonly bytesUploaded: number
+  readonly totalBytes: Option.Option<number>
+  readonly timestamp: number
+}
+
+export type UploadEvent = UploadCompleted | PartCompleted | ProgressTick | CircuitOpen

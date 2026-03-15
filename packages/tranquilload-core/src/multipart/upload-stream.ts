@@ -1,7 +1,7 @@
-import { Cause, Effect, Exit, Ref, Schedule, Stream } from "effect"
+import { Cause, Effect, Exit, Option, Ref, Schedule, Stream } from "effect"
 import type { UploadError } from "../errors/upload-error.js"
 import { CircuitOpenError, CompleteUploadError, MaxRetriesExceededError, PartUploadError } from "../errors/upload-error.js"
-import type { CircuitOpen, PartCompleted, UploadCompleted, UploadEvent } from "../progress/upload-event.js"
+import type { CircuitOpen, PartCompleted, ProgressTick, UploadCompleted, UploadEvent } from "../progress/upload-event.js"
 import { LoggerService } from "../services/logger-service.js"
 import { fromAbortSignal } from "../utils/abort-interop.js"
 import { normalizeCallback } from "../utils/normalize-callback.js"
@@ -54,6 +54,7 @@ export const uploadMultipartEffect = (
       const logger = yield* LoggerService
       const semaphore = yield* Effect.makeSemaphore(maxConcurrency)
       const refParts = yield* Ref.make<CompletedPart[]>([])
+      const refBytesUploaded = yield* Ref.make(0)
       const breaker = options.circuitBreaker
         ? yield* makeCircuitBreaker(options.circuitBreaker)
         : null
@@ -140,6 +141,22 @@ export const uploadMultipartEffect = (
             return signal ? Effect.raceFirst(partEffect, fromAbortSignal(signal)) : partEffect
           },
           { concurrency: "unbounded" }
+        ),
+        Stream.flatMap(
+          (event): Stream.Stream<UploadEvent, UploadError, never> => {
+            if (event._tag !== "PartCompleted") return Stream.make(event)
+            const tickEffect = Ref.updateAndGet(refBytesUploaded, (n) => n + event.bytesUploaded).pipe(
+              Effect.map(
+                (total): ProgressTick => ({
+                  _tag: "ProgressTick" as const,
+                  bytesUploaded: total,
+                  totalBytes: Option.none(),
+                  timestamp: Date.now(),
+                })
+              )
+            )
+            return Stream.concat(Stream.make(event), Stream.fromEffect(tickEffect))
+          }
         ),
         Stream.catchAll((err: UploadError): Stream.Stream<UploadEvent, UploadError, never> => {
           if (breaker && err._tag === "CircuitOpenError") {
