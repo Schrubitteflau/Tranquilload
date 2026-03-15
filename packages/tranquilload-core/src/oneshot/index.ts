@@ -9,7 +9,7 @@ export type UploadResult = UploadCompleted
 export type { UploadOnceOptions }
 
 export interface OneShotPublicOptions extends UploadOnceOptions {
-  readonly pipeline?: Transform | Effect.Effect<Transform, any, any>
+  readonly pipeline?: Transform | Effect.Effect<Transform, unknown, unknown>
 }
 
 export const uploadOnce = (
@@ -26,7 +26,7 @@ export const uploadOnce = (
       } else {
         const transform = await Effect.runPromise(
           Effect.provide(
-            options.pipeline as Effect.Effect<Transform, any, never>,
+            options.pipeline as Effect.Effect<Transform, unknown, never>,
             CompressionServiceLive
           )
         )

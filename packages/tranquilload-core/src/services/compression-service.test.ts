@@ -47,7 +47,7 @@ describe("CompressionService", () => {
       let calledWith: ReadableStream<Uint8Array> | null = null
 
       const TestLayer: Layer.Layer<CompressionService> = Layer.succeed(CompressionService, {
-        compress: (stream: ReadableStream<Uint8Array>, _algorithm: string): ReadableStream<Uint8Array> => {
+        compress: (stream: ReadableStream<Uint8Array>, _algorithm: CompressionFormat): ReadableStream<Uint8Array> => {
           calledWith = stream
           return mockStream
         },

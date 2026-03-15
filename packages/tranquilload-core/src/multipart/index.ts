@@ -15,7 +15,7 @@ export interface Progress {
 
 export interface MultipartPublicOptions extends UploadMultipartOptions {
   readonly totalBytes?: number
-  readonly pipeline?: Transform | Effect.Effect<Transform, any, any>
+  readonly pipeline?: Transform | Effect.Effect<Transform, unknown, unknown>
 }
 
 export const uploadMultipart = (
@@ -42,7 +42,7 @@ export const uploadMultipart = (
         // Effect pipeline — resolve with CompressionServiceLive
         const transform = await Effect.runPromise(
           Effect.provide(
-            options.pipeline as Effect.Effect<Transform, any, never>,
+            options.pipeline as Effect.Effect<Transform, unknown, never>,
             CompressionServiceLive
           )
         )

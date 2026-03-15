@@ -4,6 +4,7 @@ import { AbortError } from "../errors/upload-error.js"
 import { compress } from "../pipeline/compress.js"
 import type { Transform } from "../pipeline/middleware.js"
 import { uploadOnce } from "./index.js"
+import type { UploadCompleted } from "../progress/upload-event.js"
 
 // Helper: read all events from the ReadableStream
 const readAllEvents = async <T>(rs: ReadableStream<T>): Promise<T[]> => {
@@ -31,8 +32,8 @@ describe("uploadOnce — Dual API entry point", () => {
       ])
 
       expect(evts).toHaveLength(1)
-      expect(evts[0]._tag).toBe("UploadCompleted")
-      expect(evts[0].totalParts).toBe(1)
+      expect(evts[0]!._tag).toBe("UploadCompleted")
+      expect((evts[0]! as UploadCompleted).totalParts).toBe(1)
       expect(res._tag).toBe("UploadCompleted")
       expect(res).toBe(evts[0]) // same object reference
     })

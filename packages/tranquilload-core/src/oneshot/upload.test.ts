@@ -3,6 +3,7 @@ import { it, describe, expect } from "@effect/vitest"
 import { uploadOnceEffect } from "./upload.js"
 import { AbortError, CompleteUploadError } from "../errors/upload-error.js"
 import { LoggerServiceLive } from "../services/logger-service.js"
+import type { UploadCompleted } from "../progress/upload-event.js"
 
 const runStream = (opts: Parameters<typeof uploadOnceEffect>[0]) =>
   Stream.runCollect(uploadOnceEffect(opts)).pipe(
@@ -22,9 +23,9 @@ describe("uploadOnceEffect", () => {
       if (Exit.isSuccess(exit)) {
         const events = Array.from(exit.value)
         expect(events).toHaveLength(1)
-        expect(events[0]._tag).toBe("UploadCompleted")
-        expect(events[0].totalParts).toBe(1)
-        expect(typeof events[0].timestamp).toBe("number")
+        expect(events[0]!._tag).toBe("UploadCompleted")
+        expect((events[0]! as UploadCompleted).totalParts).toBe(1)
+        expect(typeof events[0]!.timestamp).toBe("number")
       }
     })
   )
@@ -40,8 +41,8 @@ describe("uploadOnceEffect", () => {
       if (Exit.isSuccess(exit)) {
         const events = Array.from(exit.value)
         expect(events).toHaveLength(1)
-        expect(events[0]._tag).toBe("UploadCompleted")
-        expect(events[0].totalParts).toBe(1)
+        expect(events[0]!._tag).toBe("UploadCompleted")
+        expect((events[0]! as UploadCompleted).totalParts).toBe(1)
       }
     })
   )

@@ -10,7 +10,7 @@ export class CompressionUnavailableError extends Error {
 
 export class CompressionService extends Context.Tag("@tranquilload/CompressionService")<
   CompressionService,
-  { readonly compress: (stream: ReadableStream<Uint8Array>, algorithm: string) => ReadableStream<Uint8Array> }
+  { readonly compress: (stream: ReadableStream<Uint8Array>, algorithm: CompressionFormat) => ReadableStream<Uint8Array> }
 >() {}
 
 export const CompressionServiceLive: Layer.Layer<CompressionService, CompressionUnavailableError> =
@@ -24,7 +24,7 @@ export const CompressionServiceLive: Layer.Layer<CompressionService, Compression
       return {
         compress: (stream, algorithm) =>
           stream.pipeThrough(
-            new CompressionStream(algorithm as CompressionFormat) as unknown as TransformStream<Uint8Array, Uint8Array>
+            new CompressionStream(algorithm) as unknown as TransformStream<Uint8Array, Uint8Array>
           ),
       }
     })
