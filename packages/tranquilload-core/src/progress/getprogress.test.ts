@@ -86,12 +86,17 @@ describe("getProgress()", () => {
         totalBytes: 15,
       })
 
+      // Call getProgress.effect BEFORE awaiting result — proves it doesn't launch the upload
+      const before = yield* getProgress.effect
+      expect(before.bytesUploaded).toBe(0)
+      expect(before.totalBytes).toEqual(Option.some(15))
+
       yield* Effect.promise(() => result)
 
-      // getProgress.effect is an Effect<Progress> — run it via yield*
-      const progress = yield* getProgress.effect
-      expect(progress.bytesUploaded).toBe(15)
-      expect(progress.totalBytes).toEqual(Option.some(15))
+      // After completion, Ref reflects final state
+      const after = yield* getProgress.effect
+      expect(after.bytesUploaded).toBe(15)
+      expect(after.totalBytes).toEqual(Option.some(15))
     })
   )
 })

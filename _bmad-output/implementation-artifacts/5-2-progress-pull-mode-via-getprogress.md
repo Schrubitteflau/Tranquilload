@@ -1,6 +1,6 @@
 # Story 5.2: Progress Pull-Mode via `getProgress()`
 
-Status: review
+Status: done
 
 ## Story
 
