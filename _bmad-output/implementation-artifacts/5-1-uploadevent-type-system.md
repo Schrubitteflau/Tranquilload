@@ -1,6 +1,6 @@
 # Story 5.1: UploadEvent Type System
 
-Status: review
+Status: done
 
 ## Story
 

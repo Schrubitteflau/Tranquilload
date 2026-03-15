@@ -90,7 +90,9 @@ describe("UploadEvent type system", () => {
       const tick1 = progressTicks[0] as ProgressTick
       const tick2 = progressTicks[1] as ProgressTick
       expect(tick1.bytesUploaded).toBe(3)
+      expect(tick1.totalBytes).toStrictEqual(Option.none())
       expect(tick2.bytesUploaded).toBe(6)
+      expect(tick2.totalBytes).toStrictEqual(Option.none())
     })
   )
 })

@@ -144,7 +144,6 @@ export const uploadMultipartEffect = (
         ),
         Stream.flatMap(
           (event): Stream.Stream<UploadEvent, UploadError, never> => {
-            if (event._tag !== "PartCompleted") return Stream.make(event)
             const tickEffect = Ref.updateAndGet(refBytesUploaded, (n) => n + event.bytesUploaded).pipe(
               Effect.map(
                 (total): ProgressTick => ({
