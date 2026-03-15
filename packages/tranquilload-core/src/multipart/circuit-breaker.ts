@@ -23,15 +23,15 @@ export const makeCircuitBreaker = (config: CircuitBreakerConfig): Effect.Effect<
     const refState = yield* Ref.make<CircuitState>({ _tag: "Closed", consecutiveFailures: 0 })
 
     const guard: Effect.Effect<void, CircuitOpenError> = Effect.gen(function* () {
-      const state = yield* Ref.get(refState)
-      if (state._tag !== "Open") return
-      const elapsed = Date.now() - state.openedAt
-      if (elapsed < config.cooldown) {
+      const blocked = yield* Ref.modify(refState, (state): [boolean, CircuitState] => {
+        if (state._tag !== "Open") return [false, state]
+        const elapsed = Date.now() - state.openedAt
+        if (elapsed < config.cooldown) return [true, state]
+        return [false, { _tag: "HalfOpen" as const }]
+      })
+      if (blocked) {
         return yield* Effect.fail(new CircuitOpenError(config.threshold))
       }
-      yield* Ref.update(refState, s =>
-        s._tag === "Open" ? { _tag: "HalfOpen" as const } : s
-      )
     })
 
     const onSuccess: Effect.Effect<void> = Ref.update(refState, state =>

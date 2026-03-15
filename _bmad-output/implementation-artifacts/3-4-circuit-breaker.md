@@ -1,6 +1,6 @@
 # Story 3.4: Circuit Breaker
 
-Status: review
+Status: done
 
 ## Story
 
@@ -547,3 +547,4 @@ Claude Opus 4.6
 - `packages/tranquilload-core/src/multipart/circuit-breaker.test.ts` — CREATED: 8 unit tests for state machine
 - `packages/tranquilload-core/src/multipart/upload-stream.ts` — MODIFIED: added circuitBreaker option + integration
 - `packages/tranquilload-core/src/multipart/upload-stream.test.ts` — MODIFIED: added 1 integration test for circuit breaker
+- `packages/tranquilload-core/src/errors/upload-error.test.ts` — MODIFIED: added CircuitOpenError tests + updated exhaustive union test
