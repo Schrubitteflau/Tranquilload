@@ -1,6 +1,6 @@
 # Story 3.2: Multipart Upload — Core Effect Implementation
 
-Status: review
+Status: done
 
 ## Story
 
@@ -512,16 +512,17 @@ claude-opus-4-6
 
 - Task 1: Added `PartCompleted` interface to `upload-event.ts`, expanded `UploadEvent` union
 - Task 2: Implemented `uploadMultipartEffect` in `upload-stream.ts` — Stream.unwrap + Effect.gen pattern, Semaphore for concurrency control, per-part retry with Ref-based attempt tracking, abort via Effect.raceFirst, completeUpload after all parts via Stream.concat
-- Task 3: 5 tests covering all 7 ACs — happy path (3 parts + complete), concurrency limiting, retry success, retries exhausted (MaxRetriesExceededError), abort signal (AbortError)
-- Task 4: Build passes, 62 tests pass (57 existing + 5 new), zero regressions
+- Task 3: 7 tests covering all 7 ACs — happy path (3 parts + complete), concurrency limiting, retry success, single-attempt failure (PartUploadError), retries exhausted (MaxRetriesExceededError), completeUpload error wrapping (CompleteUploadError), abort signal (AbortError)
+- Task 4: Build passes, 64 tests pass (57 existing + 7 new), zero regressions
 
 ### Change Log
 
 - 2026-03-15: Story 3.2 implementation complete — multipart upload core Effect implementation
+- 2026-03-15: Code review fixes — (1) completeUpload error mapping always wraps in CompleteUploadError (type-safety), (2) single-attempt failure surfaces PartUploadError instead of MaxRetriesExceededError (AC #6), (3) added tests for single-attempt failure and completeUpload error wrapping
 
 ### File List
 
 - `packages/tranquilload-core/src/progress/upload-event.ts` — MODIFIED (added PartCompleted interface, expanded UploadEvent union)
 - `packages/tranquilload-core/src/multipart/upload-stream.ts` — CREATED (uploadMultipartEffect, CompletedPart, UploadMultipartOptions)
-- `packages/tranquilload-core/src/multipart/upload-stream.test.ts` — CREATED (5 tests)
+- `packages/tranquilload-core/src/multipart/upload-stream.test.ts` — CREATED (7 tests)
 - `packages/tranquilload-core/src/utils/normalize-callback.ts` — MODIFIED (fixed fn parameter type: union-of-functions → function-returning-union)

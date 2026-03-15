@@ -74,6 +74,9 @@ export const uploadMultipartEffect = (
             Effect.catchAll(err =>
               Effect.gen(function* () {
                 const totalAttempts = yield* Ref.get(refAttempts)
+                if (totalAttempts <= 1) {
+                  return yield* Effect.fail(err)
+                }
                 return yield* Effect.fail(
                   new MaxRetriesExceededError(partNumber, totalAttempts, err.cause)
                 )
@@ -116,10 +119,7 @@ export const uploadMultipartEffect = (
           const parts = yield* Ref.get(refParts)
           yield* normalizeCallback(() => completeUpload(parts)).pipe(
             Effect.mapError(
-              (cause): UploadError =>
-                cause instanceof Error
-                  ? (cause as UploadError)
-                  : new CompleteUploadError(cause)
+              (cause): UploadError => new CompleteUploadError(cause)
             )
           )
           yield* Effect.sync(() => logger.log("info", "Multipart upload completed"))

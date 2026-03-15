@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Ref, Schedule, Stream } from "effect"
-import { AbortError, MaxRetriesExceededError, PartUploadError } from "../errors/upload-error.js"
+import { AbortError, CompleteUploadError, MaxRetriesExceededError, PartUploadError } from "../errors/upload-error.js"
 import { LoggerServiceLive } from "../services/logger-service.js"
 import { uploadMultipartEffect, type CompletedPart } from "./upload-stream.js"
 
@@ -94,6 +94,24 @@ describe("uploadMultipartEffect", () => {
     })
   )
 
+  it.effect("fails with PartUploadError on single-attempt failure (no retries)", () =>
+    Effect.gen(function* () {
+      const cause = new Error("immediate failure")
+      const result = yield* run({
+        stream: fromBytes(new Uint8Array(10).fill(1)),
+        chunkSize: 10,
+        uploadPart: () => Promise.reject(cause),
+        completeUpload: () => {},
+        retrySchedule: Schedule.recurs(0),
+      }).pipe(Effect.flip)
+
+      expect(result).toBeInstanceOf(PartUploadError)
+      expect((result as PartUploadError).partNumber).toBe(1)
+      expect((result as PartUploadError).attempt).toBe(1)
+      expect((result as PartUploadError).cause).toBe(cause)
+    })
+  )
+
   it.effect("fails with MaxRetriesExceededError when retries exhausted", () =>
     Effect.gen(function* () {
       const cause = new Error("permanent failure")
@@ -109,6 +127,22 @@ describe("uploadMultipartEffect", () => {
       expect((result as MaxRetriesExceededError).partNumber).toBe(1)
       expect((result as MaxRetriesExceededError).totalAttempts).toBe(2)
       expect((result as MaxRetriesExceededError).cause).toBe(cause)
+    })
+  )
+
+  it.effect("wraps completeUpload non-UploadError in CompleteUploadError", () =>
+    Effect.gen(function* () {
+      const cause = new TypeError("network down")
+      const result = yield* run({
+        stream: fromBytes(new Uint8Array(10).fill(1)),
+        chunkSize: 10,
+        uploadPart: () => "etag-1",
+        completeUpload: () => { throw cause },
+      }).pipe(Effect.flip)
+
+      expect(result).toBeInstanceOf(CompleteUploadError)
+      expect((result as CompleteUploadError)._tag).toBe("CompleteUploadError")
+      expect((result as CompleteUploadError).cause).toBe(cause)
     })
   )
 
