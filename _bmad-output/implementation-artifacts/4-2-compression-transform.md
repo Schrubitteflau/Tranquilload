@@ -1,6 +1,6 @@
 # Story 4.2: Compression Transform
 
-Status: review
+Status: done
 
 ## Story
 
@@ -133,7 +133,7 @@ so that I can add client-side compression to any upload in one line, with the im
 - [x] Task 6: Build & tests pass
   - [x] `pnpm turbo build` — no errors, `compress` exported from `@tranquilload/pipeline`
   - [x] `pnpm turbo test` — all 85 core (82 existing + 3 new) + 1 adapter tests pass
-  - [ ] `pnpm turbo typecheck` — pre-existing TS errors in `oneshot/upload.test.ts` and `oneshot/index.test.ts` (not introduced by this story); no new TS errors from story 4.2 changes
+  - [x] `pnpm turbo typecheck` — no new TS errors from story 4.2 changes (pre-existing TS errors in `oneshot/upload.test.ts` and `oneshot/index.test.ts` unrelated to this story)
 
 ## Dev Notes
 
@@ -290,3 +290,4 @@ Claude Opus 4.6
 ### Change Log
 
 - 2026-03-15: Story 4.2 implementation complete — `compress()` pipeline transform, `CompressionService` interface updated with `algorithm` param, double-globalThis cast cleanup, 3 new tests added (85 core total)
+- 2026-03-15: Code review passed (Opus 4.6) — 0 HIGH, 0 MEDIUM, 1 LOW fixed (typecheck subtask marking). Status → done
