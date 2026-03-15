@@ -1,6 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Stream } from "effect"
-import { Layer } from "effect"
+import { Effect, Layer, Stream } from "effect"
 import { LoggerService, type LogLevel } from "./logger-service.js"
 import { uploadOnce } from "../oneshot/index.js"
 import { uploadMultipart } from "../multipart/index.js"
@@ -38,7 +37,7 @@ describe("LoggerService integration", () => {
       )
 
       // Expect "One-shot upload starting" and "One-shot upload completed"
-      expect(received.length).toBeGreaterThanOrEqual(2)
+      expect(received).toHaveLength(2)
       expect(received.some(e => e.message === "One-shot upload starting")).toBe(true)
       expect(received.some(e => e.message === "One-shot upload completed")).toBe(true)
       expect(received.every(e => e.level === "info")).toBe(true)

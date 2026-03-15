@@ -1,6 +1,6 @@
 # Story 5.3: Injectable Logger Service
 
-Status: review
+Status: done
 
 ## Story
 
