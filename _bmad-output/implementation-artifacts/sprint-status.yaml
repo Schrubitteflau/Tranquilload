@@ -34,7 +34,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-14
-last_updated: 2026-03-15  # updated: 5-2-progress-pull-mode-via-getprogress → done
+last_updated: 2026-03-15  # updated: 5-3-injectable-logger-service → review
 project: Tranquilload
 project_key: NOKEY
 tracking_system: file-system
@@ -74,7 +74,7 @@ development_status:
   epic-5: in-progress
   5-1-uploadevent-type-system: done
   5-2-progress-pull-mode-via-getprogress: done
-  5-3-injectable-logger-service: backlog
+  5-3-injectable-logger-service: review
   epic-5-retrospective: optional
 
   # Epic 6: Resilience & Performance Adaptability
