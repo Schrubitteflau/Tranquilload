@@ -34,7 +34,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-14
-last_updated: 2026-03-18 # updated: 6-1-injectable-retry-schedule → done
+last_updated: 2026-03-18 # updated: 6-2-network-multiplier-adapter → review
 project: Tranquilload
 project_key: NOKEY
 tracking_system: file-system
@@ -80,7 +80,7 @@ development_status:
   # Epic 6: Resilience & Performance Adaptability
   epic-6: in-progress
   6-1-injectable-retry-schedule: done
-  6-2-network-multiplier-adapter: backlog
+  6-2-network-multiplier-adapter: review
   6-3-optimal-part-size-calculator: backlog
   epic-6-retrospective: optional
 
