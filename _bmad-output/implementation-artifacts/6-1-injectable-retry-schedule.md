@@ -1,6 +1,6 @@
 # Story 6.1: Injectable Retry Schedule
 
-Status: review
+Status: done
 
 ## Story
 
