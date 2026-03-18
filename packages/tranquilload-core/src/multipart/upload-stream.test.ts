@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Cause, Effect, Ref, Schedule, Stream } from "effect"
-import { AbortError, CircuitOpenError, CompleteUploadError, MaxRetriesExceededError, PartUploadError } from "../errors/upload-error.js"
+import { Cause, Effect, Fiber, Ref, Schedule, Stream, TestClock } from "effect"
+import { AbortError, CircuitOpenError, CompleteUploadError, MaxRetriesExceededError, PartUploadError, PresignedUrlError } from "../errors/upload-error.js"
 import type { UploadEvent } from "../progress/upload-event.js"
 import { LoggerServiceLive } from "../services/logger-service.js"
 import { uploadMultipartEffect, type CompletedPart } from "./upload-stream.js"
@@ -164,6 +164,60 @@ describe("uploadMultipartEffect", () => {
       }).pipe(Effect.flip)
 
       expect(result).toBeInstanceOf(AbortError)
+    })
+  )
+
+  it.effect("default schedule retries 3 total attempts (1 initial + 2 retries)", () =>
+    Effect.gen(function* () {
+      let attempts = 0
+      const cause = new Error("permanent")
+
+      const fiber = yield* Effect.fork(run({
+        stream: fromBytes(new Uint8Array(10).fill(1)),
+        chunkSize: 10,
+        // No retrySchedule → DEFAULT_RETRY_SCHEDULE = exponential(100ms) + recurs(2) = 3 total
+        uploadPart: () => { attempts++; throw cause },
+        completeUpload: () => {},
+      }).pipe(Effect.flip))
+
+      // Advance TestClock to let exponential backoff proceed (100ms + 200ms)
+      yield* TestClock.adjust("500 millis")
+
+      const result = yield* Fiber.join(fiber)
+
+      expect(attempts).toBe(3)
+      expect(result).toBeInstanceOf(MaxRetriesExceededError)
+      expect((result as MaxRetriesExceededError).totalAttempts).toBe(3)
+      expect((result as MaxRetriesExceededError).cause).toBe(cause)
+    })
+  )
+
+  it.effect("Schedule.whileInput allows differentiating by original error type", () =>
+    Effect.gen(function* () {
+      let attempts = 0
+      const cause = new PresignedUrlError(new Error("presigned URL expired"))
+
+      // Schedule that only retries when the cause is NOT a PresignedUrlError
+      // uploadPart errors are wrapped in PartUploadError by upload-stream.ts,
+      // so err.cause holds the original error thrown by the callback
+      const scheduleNoRetryForPresigned = Schedule.whileInput(
+        Schedule.recurs(2),
+        (err: PartUploadError) => !(err.cause instanceof PresignedUrlError)
+      )
+
+      const result = yield* run({
+        stream: fromBytes(new Uint8Array(10).fill(1)),
+        chunkSize: 10,
+        retrySchedule: scheduleNoRetryForPresigned,
+        uploadPart: () => { attempts++; throw cause },
+        completeUpload: () => {},
+      }).pipe(Effect.flip)
+
+      // Schedule.whileInput returns false on first attempt → no retries → 1 attempt only
+      expect(attempts).toBe(1)
+      // 1 attempt only → PartUploadError (not MaxRetriesExceededError — totalAttempts <= 1)
+      expect(result).toBeInstanceOf(PartUploadError)
+      expect((result as PartUploadError).cause).toBe(cause)
     })
   )
 })
