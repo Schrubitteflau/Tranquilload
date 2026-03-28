@@ -41,6 +41,11 @@
       "types": "./dist/network-multiplier.d.ts",
       "import": "./dist/network-multiplier.js",
       "require": "./dist/network-multiplier.cjs"
+    },
+    "./optimalPartSize": {
+      "types": "./dist/optimal-part-size.d.ts",
+      "import": "./dist/optimal-part-size.js",
+      "require": "./dist/optimal-part-size.cjs"
     }
   },
   "peerDependencies": {
