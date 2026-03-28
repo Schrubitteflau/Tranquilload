@@ -34,7 +34,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-14
-last_updated: 2026-03-28 # updated: 6-3-optimal-part-size-calculator → review
+last_updated: 2026-03-28 # updated: 6-3-optimal-part-size-calculator → done
 project: Tranquilload
 project_key: NOKEY
 tracking_system: file-system
@@ -81,7 +81,7 @@ development_status:
   epic-6: in-progress
   6-1-injectable-retry-schedule: done
   6-2-network-multiplier-adapter: done
-  6-3-optimal-part-size-calculator: review
+  6-3-optimal-part-size-calculator: done
   epic-6-retrospective: optional
 
   # Epic 7: Cross-Session Resumability

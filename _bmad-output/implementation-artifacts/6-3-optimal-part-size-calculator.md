@@ -1,6 +1,6 @@
 # Story 6.3: Optimal Part Size Calculator
 
-Status: review
+Status: done
 
 ## Story
 
