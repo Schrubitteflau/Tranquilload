@@ -112,6 +112,21 @@ Toute référence à `packages/core/` dans les specs est à lire comme `packages
 - Utiliser `it.effect(...)` pour les tests Effect purs — pas de `Effect.runPromise` manuel dans les tests
 - Utiliser `it.live(...)` pour les tests nécessitant des effets réels (réseau, filesystem)
 
+**TestClock pour les Schedules time-based :**
+- `Schedule.exponential` et tout Schedule avec delays réels nécessitent `Effect.fork` + `TestClock.adjust("Xms")` pour avancer le temps virtuel dans les tests — sans ça, le test attend de vraies millisecondes
+- `Schedule.recurs` (aucun délai) fonctionne sans `TestClock`
+- Pattern : `const fiber = yield* Effect.fork(myEffect)` puis `yield* TestClock.adjust("500 millis")` puis `yield* Fiber.join(fiber)`
+
+**`normalizeCallback` et le double-wrapping d'erreurs :**
+- `normalizeCallback` + `mapError` dans `upload-stream.ts` : quand un callback de type `Effect` est passé à `uploadPart`, les erreurs sont double-wrappées (une fois par `normalizeCallback`, une fois par `mapError`)
+- Dans les tests, utiliser un callback `throw` ou `Promise.reject` pour simuler fidèlement le scenario réel et éviter le double-wrapping
+- Les callbacks Effect sont supportés via `normalizeCallback` mais les erreurs émises sont toujours wrappées en `PartUploadError` avant d'atteindre `Effect.retry`
+
+**`Ref.update` et timing post-`uploadPart` :**
+- `Ref.update` fire **après** que `uploadPart` resolves — un `getProgress()` pollé **à l'intérieur** du callback `uploadPart` pour la **part 1** verra 0 bytes (le Ref n'a pas encore été mis à jour)
+- Pour observer une progression > 0 dans les tests, poller `getProgress()` sur la **part 2** minimum
+- Contexte : `uploadMultipartEffect` met à jour `refProgress` après le retour du callback `uploadPart`, pas pendant
+
 **Layers dans les tests :**
 - Injecter des Layers de test via `layer(TestLayer)` helper de `@effect/vitest`
 - Ne jamais utiliser `CompressionServiceLive` dans les tests — injecter un no-op ou un mock
@@ -225,4 +240,4 @@ When implementing stories, consult these documents in order of priority:
 - Update when technology stack or patterns change
 - Remove rules that become obvious over time
 
-Last Updated: 2026-03-08
+Last Updated: 2026-03-28
