@@ -1,6 +1,6 @@
 # Story 7.1: Upload ID Exposure & State Persistence Contract
 
-Status: review
+Status: done
 
 ## Story
 
@@ -319,10 +319,12 @@ Claude Opus 4.6
 - Updated existing test (`completeUpload` signature) and added 2 new integration tests (with/without `initiate`).
 - Updated `upload-event.test.ts` exhaustive type checks for new variant.
 - All 107 tests pass; typecheck clean; build clean.
+- [Code Review] Added test for `initiate` callback failure → `CompleteUploadError` wrapping. 108 tests pass.
 
 ### Change Log
 
 - 2026-03-29: Implemented Story 7.1 — Upload ID exposure & state persistence contract
+- 2026-03-29: Code review — added initiate failure test, 0 HIGH/MEDIUM issues, story approved
 
 ### File List
 
@@ -331,5 +333,5 @@ Claude Opus 4.6
 - `packages/tranquilload-core/src/multipart/upload-stream.ts` — added `initiate` option, changed `completeUpload` signature, `refUploadId`, `initiateStream`
 - `packages/tranquilload-core/src/multipart/index.ts` — exposed `uploadId: Promise<string>`, deferred resolver, `Stream.tap` for `UploadInitiated`
 - `packages/tranquilload-core/src/multipart/upload-stream.test.ts` — fixed `completeUpload` call signature
-- `packages/tranquilload-core/src/multipart/index.test.ts` — added 2 tests (initiate callback, no initiate)
+- `packages/tranquilload-core/src/multipart/index.test.ts` — added 3 tests (initiate callback, no initiate, initiate failure)
 - `packages/tranquilload-core/src/progress/upload-event.test.ts` — added `UploadInitiated` to exhaustive switch, Match.tag, and variants array
