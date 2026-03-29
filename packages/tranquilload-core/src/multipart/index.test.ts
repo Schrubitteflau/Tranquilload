@@ -207,4 +207,48 @@ describe("uploadMultipart — Dual API entry point", () => {
       expect(received[0]!.length).toBeGreaterThan(0)
     })
   )
+
+  it.effect("initiate callback: UploadInitiated event emitted first, uploadId resolves to correct value", () =>
+    Effect.gen(function* () {
+      const { result, events, uploadId } = uploadMultipart({
+        stream: fromBytes(new Uint8Array(10).fill(1)),
+        chunkSize: 10,
+        initiate: () => Promise.resolve({ uploadId: "upload-abc-123" }),
+        uploadPart: () => "etag-1",
+        completeUpload: (uid, _parts) => {
+          expect(uid).toBe("upload-abc-123")
+        },
+      })
+
+      yield* Effect.promise(() => result)
+      const resolvedId = yield* Effect.promise(() => uploadId)
+      expect(resolvedId).toBe("upload-abc-123")
+
+      const evts = yield* Effect.promise(() => readAllEvents(events))
+      const initiatedEvent = evts.find(e => e._tag === "UploadInitiated")
+      expect(initiatedEvent).toMatchObject({ _tag: "UploadInitiated", uploadId: "upload-abc-123" })
+      expect(evts[0]!._tag).toBe("UploadInitiated")
+
+      const completedEvent = evts.find(e => e._tag === "UploadCompleted")
+      expect(completedEvent).toMatchObject({ _tag: "UploadCompleted", uploadId: "upload-abc-123" })
+    })
+  )
+
+  it.effect("no initiate: no UploadInitiated event, uploadId resolves to empty string", () =>
+    Effect.gen(function* () {
+      const { result, events, uploadId } = uploadMultipart({
+        stream: fromBytes(new Uint8Array(10).fill(1)),
+        chunkSize: 10,
+        uploadPart: () => "etag-1",
+        completeUpload: () => {},
+      })
+
+      yield* Effect.promise(() => result)
+      const resolvedId = yield* Effect.promise(() => uploadId)
+      expect(resolvedId).toBe("")
+
+      const evts = yield* Effect.promise(() => readAllEvents(events))
+      expect(evts.find(e => e._tag === "UploadInitiated")).toBeUndefined()
+    })
+  )
 })

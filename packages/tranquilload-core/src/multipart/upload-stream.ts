@@ -1,7 +1,7 @@
 import { Cause, Effect, Exit, Option, Ref, Schedule, Stream } from "effect"
 import type { UploadError } from "../errors/upload-error.js"
 import { CircuitOpenError, CompleteUploadError, MaxRetriesExceededError, PartUploadError } from "../errors/upload-error.js"
-import type { CircuitOpen, PartCompleted, ProgressTick, UploadCompleted, UploadEvent } from "../progress/upload-event.js"
+import type { CircuitOpen, PartCompleted, ProgressTick, UploadCompleted, UploadEvent, UploadInitiated } from "../progress/upload-event.js"
 import { LoggerService } from "../services/logger-service.js"
 import { fromAbortSignal } from "../utils/abort-interop.js"
 import { normalizeCallback } from "../utils/normalize-callback.js"
@@ -21,8 +21,13 @@ export interface UploadMultipartOptions {
     chunk: Uint8Array
   ) => string | Promise<string> | Effect.Effect<string, UploadError>
   readonly completeUpload: (
+    uploadId: string,
     parts: ReadonlyArray<CompletedPart>
   ) => void | Promise<void> | Effect.Effect<void, UploadError>
+  readonly initiate?: () =>
+    | { uploadId: string }
+    | Promise<{ uploadId: string }>
+    | Effect.Effect<{ uploadId: string }, UploadError>
   readonly maxConcurrency?: number
   readonly signal?: AbortSignal
   readonly retrySchedule?: Schedule.Schedule<unknown, PartUploadError>
@@ -44,6 +49,7 @@ export const uploadMultipartEffect = (
     chunkSize,
     uploadPart,
     completeUpload,
+    initiate,
     maxConcurrency = DEFAULT_MAX_CONCURRENCY,
     signal,
     retrySchedule = DEFAULT_RETRY_SCHEDULE,
@@ -55,9 +61,27 @@ export const uploadMultipartEffect = (
       const semaphore = yield* Effect.makeSemaphore(maxConcurrency)
       const refParts = yield* Ref.make<CompletedPart[]>([])
       const refBytesUploaded = yield* Ref.make(0)
+      const refUploadId = yield* Ref.make("")
       const breaker = options.circuitBreaker
         ? yield* makeCircuitBreaker(options.circuitBreaker)
         : null
+
+      const initiateStream: Stream.Stream<UploadEvent, UploadError, never> = initiate
+        ? Stream.fromEffect(
+            normalizeCallback(initiate).pipe(
+              Effect.mapError((cause): UploadError => new CompleteUploadError(cause)),
+              Effect.flatMap(({ uploadId }) =>
+                Ref.set(refUploadId, uploadId).pipe(
+                  Effect.as({
+                    _tag: "UploadInitiated" as const,
+                    uploadId,
+                    timestamp: Date.now(),
+                  } satisfies UploadInitiated)
+                )
+              )
+            )
+          )
+        : Stream.empty
 
       const makeUploadOne = (
         partNumber: number,
@@ -172,8 +196,9 @@ export const uploadMultipartEffect = (
 
       const finalEffect: Effect.Effect<UploadEvent, UploadError, never> = Effect.gen(
         function* () {
+          const uploadId = yield* Ref.get(refUploadId)
           const parts = yield* Ref.get(refParts)
-          yield* normalizeCallback(() => completeUpload(parts)).pipe(
+          yield* normalizeCallback(() => completeUpload(uploadId, parts)).pipe(
             Effect.mapError(
               (cause): UploadError => new CompleteUploadError(cause)
             )
@@ -181,14 +206,14 @@ export const uploadMultipartEffect = (
           yield* Effect.sync(() => logger.log("info", "Multipart upload completed"))
           return {
             _tag: "UploadCompleted" as const,
-            uploadId: "",
+            uploadId,
             totalParts: parts.length,
             timestamp: Date.now(),
           } satisfies UploadCompleted
         }
       )
 
-      return partsStream.pipe(Stream.concat(Stream.fromEffect(finalEffect)))
+      return Stream.concat(initiateStream, partsStream.pipe(Stream.concat(Stream.fromEffect(finalEffect))))
     })
   )
 }

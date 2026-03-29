@@ -24,6 +24,7 @@ export const uploadMultipart = (
   events: ReadableStream<UploadEvent>
   result: Promise<UploadResult>
   getProgress: (() => Promise<Progress>) & { effect: Effect.Effect<Progress> }
+  uploadId: Promise<string>
 } => {
   const refProgress = Effect.runSync(
     Ref.make<Progress>({
@@ -31,6 +32,11 @@ export const uploadMultipart = (
       totalBytes: options.totalBytes !== undefined ? Option.some(options.totalBytes) : Option.none(),
     })
   )
+
+  let resolveUploadId!: (id: string) => void
+  const uploadIdPromise: Promise<string> = new Promise<string>((resolve) => {
+    resolveUploadId = resolve
+  })
 
   const collected: Promise<ReadonlyArray<UploadEvent>> = (async () => {
     // Step 1: resolve pipeline to get the processed stream
@@ -53,6 +59,9 @@ export const uploadMultipart = (
     // Step 2: run upload with processedStream
     const program = uploadMultipartEffect({ ...options, stream: processedStream }).pipe(
       Stream.tap((event) => {
+        if (event._tag === "UploadInitiated") {
+          return Effect.sync(() => resolveUploadId(event.uploadId))
+        }
         if (event._tag === "PartCompleted") {
           return Ref.update(refProgress, (p) => ({
             ...p,
@@ -71,6 +80,8 @@ export const uploadMultipart = (
     if (Exit.isSuccess(exit)) return exit.value
     return Promise.reject(Cause.squash(exit.cause))
   })()
+
+  collected.finally(() => resolveUploadId(""))
 
   // events: ReadableStream built from collected array; closes cleanly on error
   const events = new ReadableStream<UploadEvent>({
@@ -100,7 +111,7 @@ export const uploadMultipart = (
     { effect: Ref.get(refProgress) }
   )
 
-  return { events, result, getProgress }
+  return { events, result, getProgress, uploadId: uploadIdPromise }
 }
 
 // Effect escape hatch — LoggerService layer left open for user composition

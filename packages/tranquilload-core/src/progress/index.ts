@@ -1,5 +1,6 @@
 export type {
   UploadEvent,
+  UploadInitiated,
   PartCompleted,
   ProgressTick,
   UploadCompleted,

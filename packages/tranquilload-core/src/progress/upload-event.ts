@@ -1,5 +1,11 @@
 import { Option } from "effect"
 
+export interface UploadInitiated {
+  readonly _tag: "UploadInitiated"
+  readonly uploadId: string
+  readonly timestamp: number
+}
+
 export interface UploadCompleted {
   readonly _tag: "UploadCompleted"
   readonly uploadId: string
@@ -28,4 +34,4 @@ export interface ProgressTick {
   readonly timestamp: number
 }
 
-export type UploadEvent = UploadCompleted | PartCompleted | ProgressTick | CircuitOpen
+export type UploadEvent = UploadInitiated | UploadCompleted | PartCompleted | ProgressTick | CircuitOpen

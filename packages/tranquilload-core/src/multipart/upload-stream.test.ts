@@ -27,7 +27,7 @@ describe("uploadMultipartEffect", () => {
           expect(chunk.length).toBeLessThanOrEqual(10)
           return etags[partNumber - 1]!
         },
-        completeUpload: (parts) => { receivedParts.push(...parts) },
+        completeUpload: (_uploadId, parts) => { receivedParts.push(...parts) },
       })
 
       const partEvents = events.filter(e => e._tag === "PartCompleted")

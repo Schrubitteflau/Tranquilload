@@ -7,6 +7,8 @@ describe("UploadEvent type system", () => {
   it("exhaustive switch on _tag compiles and handles all variants", () => {
     const handle = (event: UploadEvent): string => {
       switch (event._tag) {
+        case "UploadInitiated":
+          return "initiated"
         case "PartCompleted":
           return "part"
         case "ProgressTick":
@@ -36,6 +38,7 @@ describe("UploadEvent type system", () => {
         timestamp: 0,
       }
       const result = Match.type<UploadEvent>().pipe(
+        Match.tag("UploadInitiated", (e) => `initiated:${e.uploadId}`),
         Match.tag("PartCompleted", (e) => `part:${e.partNumber}`),
         Match.tag("ProgressTick", (e) => `progress:${e.bytesUploaded}`),
         Match.tag("UploadCompleted", (e) => `done:${e.totalParts}`),
@@ -48,6 +51,7 @@ describe("UploadEvent type system", () => {
 
   it("all variants have _tag and timestamp fields", () => {
     const variants: UploadEvent[] = [
+      { _tag: "UploadInitiated", uploadId: "id", timestamp: 0 },
       { _tag: "PartCompleted", partNumber: 1, etag: "e", bytesUploaded: 10, timestamp: 1 },
       { _tag: "ProgressTick", bytesUploaded: 10, totalBytes: Option.some(100), timestamp: 2 },
       { _tag: "UploadCompleted", uploadId: "id", totalParts: 1, timestamp: 3 },
