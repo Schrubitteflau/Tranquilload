@@ -1,6 +1,6 @@
 # Story 7.2: Cross-Session Resume via `reconcileCompletedParts`
 
-Status: review
+Status: done
 
 ## Story
 
@@ -323,6 +323,7 @@ None — clean implementation, no debugging needed.
 ### Change Log
 
 - 2026-03-30: Implemented cross-session resume via `reconcileCompletedParts` callback (Story 7.2)
+- 2026-03-30: Code review passed — clean review, all ACs validated, no issues found
 
 ### File List
 
