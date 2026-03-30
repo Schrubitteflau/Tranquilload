@@ -81,7 +81,8 @@ export const uploadMultipart = (
     return Promise.reject(Cause.squash(exit.cause))
   })()
 
-  collected.finally(() => resolveUploadId(""))
+  // Rejection is surfaced via `result`; suppress the propagated rejection from .finally()
+  collected.finally(() => resolveUploadId("")).catch(() => {})
 
   // events: ReadableStream built from collected array; closes cleanly on error
   const events = new ReadableStream<UploadEvent>({
