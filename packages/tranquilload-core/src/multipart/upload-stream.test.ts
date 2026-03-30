@@ -222,6 +222,84 @@ describe("uploadMultipartEffect", () => {
   )
 })
 
+describe("uploadMultipartEffect with reconcileCompletedParts", () => {
+  it.effect("skipped parts emit PartCompleted with reconciled etag, uploadPart not called for them", () =>
+    Effect.gen(function* () {
+      const uploadedPartNumbers: number[] = []
+
+      const events = yield* run({
+        stream: fromBytes(new Uint8Array(30).fill(1)),
+        chunkSize: 10,
+        reconcileCompletedParts: () => [
+          { partNumber: 1, etag: "etag-reconciled-1" },
+          { partNumber: 2, etag: "etag-reconciled-2" },
+        ],
+        uploadPart: (n) => { uploadedPartNumbers.push(n); return `etag-fresh-${n}` },
+        completeUpload: () => {},
+      })
+
+      expect(uploadedPartNumbers).toEqual([3])
+
+      const partEvents = events.filter(e => e._tag === "PartCompleted")
+      expect(partEvents).toHaveLength(3)
+      expect(partEvents.find(e => e._tag === "PartCompleted" && e.partNumber === 1)).toMatchObject({ partNumber: 1, etag: "etag-reconciled-1" })
+      expect(partEvents.find(e => e._tag === "PartCompleted" && e.partNumber === 2)).toMatchObject({ partNumber: 2, etag: "etag-reconciled-2" })
+      expect(partEvents.find(e => e._tag === "PartCompleted" && e.partNumber === 3)).toMatchObject({ partNumber: 3, etag: "etag-fresh-3" })
+    })
+  )
+
+  it.effect("completeUpload receives all parts (reconciled + new)", () =>
+    Effect.gen(function* () {
+      let receivedParts: CompletedPart[] = []
+
+      yield* run({
+        stream: fromBytes(new Uint8Array(20).fill(1)),
+        chunkSize: 10,
+        reconcileCompletedParts: () => [{ partNumber: 1, etag: "etag-reconciled-1" }],
+        uploadPart: () => "etag-fresh-2",
+        completeUpload: (_uploadId, parts) => { receivedParts = [...parts] },
+      })
+
+      expect(receivedParts).toHaveLength(2)
+      expect(receivedParts.find(p => p.partNumber === 1)).toMatchObject({ partNumber: 1, etag: "etag-reconciled-1" })
+      expect(receivedParts.find(p => p.partNumber === 2)).toMatchObject({ partNumber: 2, etag: "etag-fresh-2" })
+    })
+  )
+
+  it.effect("empty reconcile: all parts uploaded normally", () =>
+    Effect.gen(function* () {
+      const uploadedPartNumbers: number[] = []
+
+      yield* run({
+        stream: fromBytes(new Uint8Array(20).fill(1)),
+        chunkSize: 10,
+        reconcileCompletedParts: () => [],
+        uploadPart: (n) => { uploadedPartNumbers.push(n); return `etag-${n}` },
+        completeUpload: () => {},
+      })
+
+      expect(uploadedPartNumbers.sort()).toEqual([1, 2])
+    })
+  )
+
+  it.effect("reconcileCompletedParts throws: fails with CompleteUploadError", () =>
+    Effect.gen(function* () {
+      const cause = new Error("reconcile failed")
+
+      const result = yield* run({
+        stream: fromBytes(new Uint8Array(10).fill(1)),
+        chunkSize: 10,
+        reconcileCompletedParts: () => { throw cause },
+        uploadPart: () => "etag",
+        completeUpload: () => {},
+      }).pipe(Effect.flip)
+
+      expect(result).toBeInstanceOf(CompleteUploadError)
+      expect((result as CompleteUploadError).cause).toBe(cause)
+    })
+  )
+})
+
 describe("uploadMultipartEffect with circuitBreaker", () => {
   it.effect("opens circuit after threshold consecutive failures, emits CircuitOpen event", () =>
     Effect.gen(function* () {

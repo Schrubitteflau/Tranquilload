@@ -28,6 +28,10 @@ export interface UploadMultipartOptions {
     | { uploadId: string }
     | Promise<{ uploadId: string }>
     | Effect.Effect<{ uploadId: string }, UploadError>
+  readonly reconcileCompletedParts?: () =>
+    | ReadonlyArray<CompletedPart>
+    | Promise<ReadonlyArray<CompletedPart>>
+    | Effect.Effect<ReadonlyArray<CompletedPart>, UploadError>
   readonly maxConcurrency?: number
   readonly signal?: AbortSignal
   readonly retrySchedule?: Schedule.Schedule<unknown, PartUploadError>
@@ -50,6 +54,7 @@ export const uploadMultipartEffect = (
     uploadPart,
     completeUpload,
     initiate,
+    reconcileCompletedParts,
     maxConcurrency = DEFAULT_MAX_CONCURRENCY,
     signal,
     retrySchedule = DEFAULT_RETRY_SCHEDULE,
@@ -65,6 +70,14 @@ export const uploadMultipartEffect = (
       const breaker = options.circuitBreaker
         ? yield* makeCircuitBreaker(options.circuitBreaker)
         : null
+
+      const reconciledMap: Map<number, string> = reconcileCompletedParts
+        ? new Map(
+            (yield* normalizeCallback(reconcileCompletedParts).pipe(
+              Effect.mapError((cause): UploadError => new CompleteUploadError(cause))
+            )).map(p => [p.partNumber, p.etag])
+          )
+        : new Map()
 
       const initiateStream: Stream.Stream<UploadEvent, UploadError, never> = initiate
         ? Stream.fromEffect(
@@ -88,6 +101,20 @@ export const uploadMultipartEffect = (
         chunk: Uint8Array
       ): Effect.Effect<PartCompleted, UploadError> =>
         Effect.gen(function* () {
+          const reconciledEtag = reconciledMap.get(partNumber)
+          if (reconciledEtag !== undefined) {
+            const event: PartCompleted = {
+              _tag: "PartCompleted" as const,
+              partNumber,
+              etag: reconciledEtag,
+              bytesUploaded: chunk.length,
+              timestamp: Date.now(),
+            }
+            yield* Ref.update(refParts, parts => [...parts, { partNumber, etag: reconciledEtag }])
+            yield* Effect.sync(() => logger.log("info", `Part ${partNumber} skipped (reconciled)`))
+            return event
+          }
+
           const refAttempts = yield* Ref.make(0)
 
           const single: Effect.Effect<string, PartUploadError> = Effect.gen(function* () {
