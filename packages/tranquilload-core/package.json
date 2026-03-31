@@ -18,33 +18,33 @@
   "type": "module",
   "exports": {
     "./multipart": {
-      "types": "./dist/multipart.d.ts",
-      "import": "./dist/multipart.js",
+      "types": "./dist/multipart.d.mts",
+      "import": "./dist/multipart.mjs",
       "require": "./dist/multipart.cjs"
     },
     "./oneshot": {
-      "types": "./dist/oneshot.d.ts",
-      "import": "./dist/oneshot.js",
+      "types": "./dist/oneshot.d.mts",
+      "import": "./dist/oneshot.mjs",
       "require": "./dist/oneshot.cjs"
     },
     "./pipeline": {
-      "types": "./dist/pipeline.d.ts",
-      "import": "./dist/pipeline.js",
+      "types": "./dist/pipeline.d.mts",
+      "import": "./dist/pipeline.mjs",
       "require": "./dist/pipeline.cjs"
     },
     "./services": {
-      "types": "./dist/services.d.ts",
-      "import": "./dist/services.js",
+      "types": "./dist/services.d.mts",
+      "import": "./dist/services.mjs",
       "require": "./dist/services.cjs"
     },
     "./errors": {
-      "types": "./dist/errors.d.ts",
-      "import": "./dist/errors.js",
+      "types": "./dist/errors.d.mts",
+      "import": "./dist/errors.mjs",
       "require": "./dist/errors.cjs"
     },
     "./progress": {
-      "types": "./dist/progress.d.ts",
-      "import": "./dist/progress.js",
+      "types": "./dist/progress.d.mts",
+      "import": "./dist/progress.mjs",
       "require": "./dist/progress.cjs"
     }
   },

@@ -18,33 +18,33 @@
   "type": "module",
   "exports": {
     "./fromFile": {
-      "types": "./dist/from-file.d.ts",
-      "import": "./dist/from-file.js",
+      "types": "./dist/from-file.d.mts",
+      "import": "./dist/from-file.mjs",
       "require": "./dist/from-file.cjs"
     },
     "./fromNodeReadable": {
-      "types": "./dist/from-node-readable.d.ts",
-      "import": "./dist/from-node-readable.js",
+      "types": "./dist/from-node-readable.d.mts",
+      "import": "./dist/from-node-readable.mjs",
       "require": "./dist/from-node-readable.cjs"
     },
     "./s3MultipartUpload": {
-      "types": "./dist/s3-multipart-upload.d.ts",
-      "import": "./dist/s3-multipart-upload.js",
+      "types": "./dist/s3-multipart-upload.d.mts",
+      "import": "./dist/s3-multipart-upload.mjs",
       "require": "./dist/s3-multipart-upload.cjs"
     },
     "./simpleHttpUpload": {
-      "types": "./dist/simple-http-upload.d.ts",
-      "import": "./dist/simple-http-upload.js",
+      "types": "./dist/simple-http-upload.d.mts",
+      "import": "./dist/simple-http-upload.mjs",
       "require": "./dist/simple-http-upload.cjs"
     },
     "./networkMultiplier": {
-      "types": "./dist/network-multiplier.d.ts",
-      "import": "./dist/network-multiplier.js",
+      "types": "./dist/network-multiplier.d.mts",
+      "import": "./dist/network-multiplier.mjs",
       "require": "./dist/network-multiplier.cjs"
     },
     "./optimalPartSize": {
-      "types": "./dist/optimal-part-size.d.ts",
-      "import": "./dist/optimal-part-size.js",
+      "types": "./dist/optimal-part-size.d.mts",
+      "import": "./dist/optimal-part-size.mjs",
       "require": "./dist/optimal-part-size.cjs"
     }
   },
