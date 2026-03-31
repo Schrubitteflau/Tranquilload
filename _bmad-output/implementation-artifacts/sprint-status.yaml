@@ -34,7 +34,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-14
-last_updated: 2026-03-31 # updated: 8-1-file-source-adapter → review
+last_updated: 2026-03-31 # updated: 8-1-file-source-adapter → done
 project: Tranquilload
 project_key: NOKEY
 tracking_system: file-system
@@ -85,14 +85,14 @@ development_status:
   epic-6-retrospective: done
 
   # Epic 7: Cross-Session Resumability
-  epic-7: in-progress
+  epic-7: done
   7-1-upload-id-exposure-state-persistence-contract: done
   7-2-cross-session-resume-via-reconcilecompletedparts: done
   epic-7-retrospective: done
 
   # Epic 8: Adapters & Protocol Integration
   epic-8: in-progress
-  8-1-file-source-adapter: review
+  8-1-file-source-adapter: done
   8-2-nodejs-readable-stream-adapter: backlog
   8-3-s3-multipart-upload-adapter: backlog
   8-4-simple-http-upload-adapter: backlog

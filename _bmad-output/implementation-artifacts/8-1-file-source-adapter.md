@@ -1,6 +1,6 @@
 # Story 8.1: File Source Adapter
 
-Status: review
+Status: done
 
 ## Story
 
