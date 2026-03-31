@@ -1,2 +1,6 @@
-// Placeholder — implemented in Story 8.1
-export const _placeholder: undefined = undefined
+export function fromFile(file: File): { stream: ReadableStream<Uint8Array>; totalBytes: number } {
+  return {
+    stream: file.stream(),
+    totalBytes: file.size,
+  }
+}
