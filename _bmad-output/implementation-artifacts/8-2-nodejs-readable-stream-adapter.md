@@ -1,6 +1,6 @@
 # Story 8.2: Node.js Readable Stream Adapter
 
-Status: review
+Status: done
 
 ## Story
 
