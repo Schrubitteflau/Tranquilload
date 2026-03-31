@@ -1,2 +1,5 @@
-// Placeholder — implemented in Story 8.2
-export const _placeholder: undefined = undefined
+import { Readable } from "node:stream"
+
+export function fromNodeReadable(readable: Readable): ReadableStream<Uint8Array> {
+  return Readable.toWeb(readable) as ReadableStream<Uint8Array>
+}

@@ -53,6 +53,7 @@
     "@tranquilload/core": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "latest",
     "@effect/vitest": "latest",
     "@tranquilload/core": "workspace:*",
     "effect": "3.19.19",
