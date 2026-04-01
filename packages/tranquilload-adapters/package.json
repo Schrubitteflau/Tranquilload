@@ -48,9 +48,12 @@
       "require": "./dist/optimal-part-size.cjs"
     }
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "peerDependencies": {
     "effect": ">=3.19.19",
-    "@tranquilload/core": "workspace:*"
+    "@tranquilload/core": "workspace:^"
   },
   "devDependencies": {
     "@types/node": "latest",

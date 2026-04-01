@@ -48,6 +48,9 @@
       "require": "./dist/progress.cjs"
     }
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "peerDependencies": {
     "effect": ">=3.19.19"
   },
