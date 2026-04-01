@@ -1,6 +1,6 @@
 # Story 8.3: S3 Multipart Upload Adapter
 
-Status: review
+Status: done
 
 ## Story
 
@@ -378,11 +378,20 @@ Claude Opus 4.6
 - 2026-03-31: Implemented s3MultipartUpload adapter (Story 8.3)
 - 2026-03-31: Fixed package.json exports in core and adapters to match tsdown output extensions (.mjs/.d.mts)
 - 2026-03-31: Added vitest resolve alias for cross-package @tranquilload/core imports
+- 2026-04-01: Code review fixes — redundant ETag fallback removed; added InitiateUploadError and ReconcileError to UploadError union for phase-accurate recovery semantics
 
 ### File List
 
 - `packages/tranquilload-adapters/src/protocols/s3-multipart-upload.ts` — replaced placeholder with full implementation
-- `packages/tranquilload-adapters/src/protocols/s3-multipart-upload.test.ts` — new, 7 tests
+- `packages/tranquilload-adapters/src/protocols/s3-multipart-upload.test.ts` — 7 tests + ETag fix
 - `packages/tranquilload-adapters/vitest.config.ts` — added resolve alias for @tranquilload/core
 - `packages/tranquilload-adapters/package.json` — fixed exports extensions (.js → .mjs, .d.ts → .d.mts)
 - `packages/tranquilload-core/package.json` — fixed exports extensions (.js → .mjs, .d.ts → .d.mts)
+- `packages/tranquilload-core/src/errors/upload-error.ts` — added InitiateUploadError and ReconcileError; updated UploadError union
+- `packages/tranquilload-core/src/errors/index.ts` — exported InitiateUploadError and ReconcileError
+- `packages/tranquilload-core/src/errors/upload-error.test.ts` — added tests for InitiateUploadError and ReconcileError; updated exhaustive switch
+- `packages/tranquilload-core/src/multipart/upload-stream.ts` — initiate maps to InitiateUploadError, reconcileCompletedParts maps to ReconcileError
+- `packages/tranquilload-core/src/multipart/upload-stream.test.ts` — updated reconcileCompletedParts failure test to expect ReconcileError
+- `packages/tranquilload-core/src/multipart/index.test.ts` — updated initiate failure test to expect InitiateUploadError
+- `_bmad-output/planning-artifacts/architecture.md` — updated UploadError union (added InitiateUploadError, ReconcileError, CircuitOpenError)
+- `_bmad-output/planning-artifacts/epics.md` — updated Story 1.2 AC union

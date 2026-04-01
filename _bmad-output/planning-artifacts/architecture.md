@@ -204,8 +204,11 @@ type UploadError =
   | PartUploadError
   | MaxRetriesExceededError
   | PresignedUrlError
+  | InitiateUploadError
+  | ReconcileError
   | CompleteUploadError
   | AbortError
+  | CircuitOpenError
 ```
 
 **Rationale :** Zéro impact sur la robustesse interne Effect. `instanceof Error` fonctionne côté Promise API. Switch exhaustif `Match.tag` fonctionne côté Effect API. Les deux mondes cohabitent sans couche de conversion.

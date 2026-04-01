@@ -1,6 +1,6 @@
 import { Cause, Effect, Exit, Option, Ref, Schedule, Stream } from "effect"
 import type { UploadError } from "../errors/upload-error.js"
-import { CircuitOpenError, CompleteUploadError, MaxRetriesExceededError, PartUploadError } from "../errors/upload-error.js"
+import { CircuitOpenError, CompleteUploadError, InitiateUploadError, MaxRetriesExceededError, PartUploadError, ReconcileError } from "../errors/upload-error.js"
 import type { CircuitOpen, PartCompleted, ProgressTick, UploadCompleted, UploadEvent, UploadInitiated } from "../progress/upload-event.js"
 import { LoggerService } from "../services/logger-service.js"
 import { fromAbortSignal } from "../utils/abort-interop.js"
@@ -74,7 +74,7 @@ export const uploadMultipartEffect = (
       const reconciledMap: Map<number, string> = reconcileCompletedParts
         ? new Map(
             (yield* normalizeCallback(reconcileCompletedParts).pipe(
-              Effect.mapError((cause): UploadError => new CompleteUploadError(cause))
+              Effect.mapError((cause): UploadError => new ReconcileError(cause))
             )).map(p => [p.partNumber, p.etag])
           )
         : new Map()
@@ -82,7 +82,7 @@ export const uploadMultipartEffect = (
       const initiateStream: Stream.Stream<UploadEvent, UploadError, never> = initiate
         ? Stream.fromEffect(
             normalizeCallback(initiate).pipe(
-              Effect.mapError((cause): UploadError => new CompleteUploadError(cause)),
+              Effect.mapError((cause): UploadError => new InitiateUploadError(cause)),
               Effect.flatMap(({ uploadId }) =>
                 Ref.set(refUploadId, uploadId).pipe(
                   Effect.as({

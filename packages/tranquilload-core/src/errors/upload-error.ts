@@ -33,6 +33,24 @@ export class PresignedUrlError extends Error {
   }
 }
 
+export class InitiateUploadError extends Error {
+  readonly _tag = "InitiateUploadError" as const
+
+  constructor(override readonly cause: unknown) {
+    super("Failed to initiate multipart upload")
+    this.name = "InitiateUploadError"
+  }
+}
+
+export class ReconcileError extends Error {
+  readonly _tag = "ReconcileError" as const
+
+  constructor(override readonly cause: unknown) {
+    super("Failed to reconcile completed parts")
+    this.name = "ReconcileError"
+  }
+}
+
 export class CompleteUploadError extends Error {
   readonly _tag = "CompleteUploadError" as const
 
@@ -64,6 +82,8 @@ export type UploadError =
   | PartUploadError
   | MaxRetriesExceededError
   | PresignedUrlError
+  | InitiateUploadError
+  | ReconcileError
   | CompleteUploadError
   | AbortError
   | CircuitOpenError

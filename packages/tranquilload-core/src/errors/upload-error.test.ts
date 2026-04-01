@@ -3,6 +3,8 @@ import {
   PartUploadError,
   MaxRetriesExceededError,
   PresignedUrlError,
+  InitiateUploadError,
+  ReconcileError,
   CompleteUploadError,
   AbortError,
   CircuitOpenError,
@@ -91,6 +93,54 @@ describe("PresignedUrlError", () => {
   })
 })
 
+describe("InitiateUploadError", () => {
+  it("is instanceof Error", () => {
+    const err = new InitiateUploadError(new Error("S3 failure"))
+    expect(err instanceof Error).toBe(true)
+  })
+  it("has correct _tag", () => {
+    const err = new InitiateUploadError(new Error("S3 failure"))
+    expect(err._tag).toBe("InitiateUploadError")
+  })
+  it("has human-readable message", () => {
+    const err = new InitiateUploadError(null)
+    expect(err.message).toBe("Failed to initiate multipart upload")
+  })
+  it("name equals _tag for logger compat", () => {
+    const err = new InitiateUploadError(null)
+    expect(err.name).toBe("InitiateUploadError")
+  })
+  it("preserves cause", () => {
+    const cause = new Error("S3 failure")
+    const err = new InitiateUploadError(cause)
+    expect(err.cause).toBe(cause)
+  })
+})
+
+describe("ReconcileError", () => {
+  it("is instanceof Error", () => {
+    const err = new ReconcileError(new Error("storage unavailable"))
+    expect(err instanceof Error).toBe(true)
+  })
+  it("has correct _tag", () => {
+    const err = new ReconcileError(new Error("storage unavailable"))
+    expect(err._tag).toBe("ReconcileError")
+  })
+  it("has human-readable message", () => {
+    const err = new ReconcileError(null)
+    expect(err.message).toBe("Failed to reconcile completed parts")
+  })
+  it("name equals _tag for logger compat", () => {
+    const err = new ReconcileError(null)
+    expect(err.name).toBe("ReconcileError")
+  })
+  it("preserves cause", () => {
+    const cause = new Error("storage unavailable")
+    const err = new ReconcileError(cause)
+    expect(err.cause).toBe(cause)
+  })
+})
+
 describe("CompleteUploadError", () => {
   it("is instanceof Error", () => {
     const err = new CompleteUploadError(new Error("500 Internal"))
@@ -144,6 +194,8 @@ it("UploadError union is exhaustive", () => {
       case "PartUploadError": return "part"
       case "MaxRetriesExceededError": return "maxRetries"
       case "PresignedUrlError": return "presigned"
+      case "InitiateUploadError": return "initiate"
+      case "ReconcileError": return "reconcile"
       case "CompleteUploadError": return "complete"
       case "AbortError": return "abort"
       case "CircuitOpenError": return "circuitOpen"
@@ -157,6 +209,8 @@ it("UploadError union is exhaustive", () => {
   }
   expect(check(new AbortError())).toBe("abort")
   expect(check(new PresignedUrlError(null))).toBe("presigned")
+  expect(check(new InitiateUploadError(null))).toBe("initiate")
+  expect(check(new ReconcileError(null))).toBe("reconcile")
   expect(check(new CompleteUploadError(null))).toBe("complete")
   expect(check(new PartUploadError(1, 1, null))).toBe("part")
   expect(check(new MaxRetriesExceededError(1, 1, null))).toBe("maxRetries")

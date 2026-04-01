@@ -154,7 +154,7 @@ So that I can handle all upload failure cases with full TypeScript exhaustivenes
 
 **Given** the `@tranquilload/errors` sub-path export
 **When** the developer imports `UploadError`
-**Then** the type is a closed union of `PartUploadError | MaxRetriesExceededError | PresignedUrlError | CompleteUploadError | AbortError`
+**Then** the type is a closed union of `PartUploadError | MaxRetriesExceededError | PresignedUrlError | InitiateUploadError | ReconcileError | CompleteUploadError | AbortError | CircuitOpenError`
 **And** each variant extends `Error` (stack trace, `instanceof Error` works)
 **And** each variant has a `readonly _tag` literal property
 

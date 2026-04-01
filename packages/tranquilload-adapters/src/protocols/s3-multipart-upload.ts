@@ -63,7 +63,7 @@ export function s3MultipartUpload(options: S3MultipartUploadOptions): {
         new Error(`S3 PUT failed: HTTP ${response.status} ${response.statusText}`)
       )
     }
-    const rawEtag = response.headers.get("ETag") ?? response.headers.get("etag")
+    const rawEtag = response.headers.get("ETag")
     if (!rawEtag) {
       throw new PartUploadError(partNumber, 0, new Error("S3 response missing ETag header"))
     }

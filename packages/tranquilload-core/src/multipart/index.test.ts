@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Cause, Effect, Exit, Option } from "effect"
-import { AbortError, CompleteUploadError } from "../errors/upload-error.js"
+import { AbortError, CompleteUploadError, InitiateUploadError } from "../errors/upload-error.js"
 import { compress } from "../pipeline/compress.js"
 import { compose, type Transform } from "../pipeline/middleware.js"
 import { uploadMultipart } from "./index.js"
@@ -252,7 +252,7 @@ describe("uploadMultipart — Dual API entry point", () => {
     })
   )
 
-  it.effect("initiate failure: result rejects with CompleteUploadError, uploadId resolves to empty string", () =>
+  it.effect("initiate failure: result rejects with InitiateUploadError, uploadId resolves to empty string", () =>
     Effect.gen(function* () {
       const cause = new Error("initiation failed")
       const { result, uploadId } = uploadMultipart({
@@ -272,8 +272,8 @@ describe("uploadMultipart — Dual API entry point", () => {
       expect(Exit.isFailure(resultExit)).toBe(true)
       if (Exit.isFailure(resultExit)) {
         const err = (Cause.failureOption(resultExit.cause) as { _tag: "Some"; value: unknown }).value
-        expect(err).toBeInstanceOf(CompleteUploadError)
-        expect((err as CompleteUploadError).cause).toBe(cause)
+        expect(err).toBeInstanceOf(InitiateUploadError)
+        expect((err as InitiateUploadError).cause).toBe(cause)
       }
 
       const resolvedId = yield* Effect.promise(() => uploadId)

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Cause, Effect, Fiber, Ref, Schedule, Stream, TestClock } from "effect"
-import { AbortError, CircuitOpenError, CompleteUploadError, MaxRetriesExceededError, PartUploadError, PresignedUrlError } from "../errors/upload-error.js"
+import { AbortError, CircuitOpenError, CompleteUploadError, MaxRetriesExceededError, PartUploadError, PresignedUrlError, ReconcileError } from "../errors/upload-error.js"
 import type { UploadEvent } from "../progress/upload-event.js"
 import { LoggerServiceLive } from "../services/logger-service.js"
 import { uploadMultipartEffect, type CompletedPart } from "./upload-stream.js"
@@ -282,7 +282,7 @@ describe("uploadMultipartEffect with reconcileCompletedParts", () => {
     })
   )
 
-  it.effect("reconcileCompletedParts throws: fails with CompleteUploadError", () =>
+  it.effect("reconcileCompletedParts throws: fails with ReconcileError", () =>
     Effect.gen(function* () {
       const cause = new Error("reconcile failed")
 
@@ -294,8 +294,8 @@ describe("uploadMultipartEffect with reconcileCompletedParts", () => {
         completeUpload: () => {},
       }).pipe(Effect.flip)
 
-      expect(result).toBeInstanceOf(CompleteUploadError)
-      expect((result as CompleteUploadError).cause).toBe(cause)
+      expect(result).toBeInstanceOf(ReconcileError)
+      expect((result as ReconcileError).cause).toBe(cause)
     })
   )
 })
