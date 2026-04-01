@@ -55,7 +55,7 @@ NFR7: **Progressive adoption without Effect** — All user callbacks can be plai
 ### Additional Requirements
 
 - **Monorepo scaffold**: pnpm workspaces + tsdown + vitest + Turborepo. This is the first story.
-- **Two npm packages**: `@tranquilload` (core) and `@tranquilload/adapters`, with lockstep versioning via Changesets.
+- **Two npm packages**: `@tranquilload/core` and `@tranquilload/adapters`, with independent versioning via Changesets (peer dep `^X.Y.Z` ensures compatibility).
 - **Build**: tsdown generates CJS + ESM + `.d.ts` via Oxc. Granular exports map in `package.json`.
 - **Testing**: vitest + `@effect/vitest` (official Effect testing wrapper), tests co-located with source files (`*.test.ts`).
 - **CI/CD**: Two GitHub Actions workflows — `ci.yml` (typecheck + test + build on push/PR) and `release.yml` (Changesets publish on merge to main).
@@ -115,7 +115,7 @@ The library user can connect the lib to S3, HTTP one-shot, browser File API, or 
 
 ### Epic 9: CI/CD & Publishing
 The team can publish versioned npm releases automatically via Changesets, with CI validating typecheck + tests + build on every PR.
-**FRs covered:** Additional requirements (GitHub Actions, Changesets, lockstep versioning)
+**FRs covered:** Additional requirements (GitHub Actions, Changesets, independent versioning)
 
 ## Epic 1: Project Foundation
 
@@ -665,11 +665,11 @@ So that versioning, CHANGELOG generation, and npm publishing are fully automated
 
 **Given** a changeset file is present in a PR
 **When** the PR is merged to `main`
-**Then** the Changesets GitHub Action opens a "Version Packages" PR bumping both `@tranquilload` and `@tranquilload/adapters` in lockstep with an updated CHANGELOG
+**Then** the Changesets GitHub Action opens a "Version Packages" PR bumping the changed package(s) with an updated CHANGELOG per package
 
 **Given** the "Version Packages" PR is merged
 **When** the release workflow runs
-**Then** both packages are published to npm with matching version numbers
+**Then** the changed package(s) are published to npm with their updated version numbers
 **And** a GitHub Release is created with the CHANGELOG entries
 
 **Given** no changeset file is present in a PR

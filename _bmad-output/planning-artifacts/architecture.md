@@ -126,14 +126,14 @@ cd packages/adapters && pnpm init
 ```
 packages/
   core/         → @tranquilload/core (Effect, WHATWG Streams, zéro autre dep)
-  adapters/     → @tranquilload/adapters (dépend de core en workspace:*)
+  adapters/     → @tranquilload/adapters (dépend de core en workspace:^ peerDep)
 pnpm-workspace.yaml
 turbo.json
 tsconfig.base.json
 ```
 
 **Development Experience:**
-- pnpm workspace:* pour les dépendances inter-packages
+- pnpm workspace:^ (peerDep) / workspace:* (devDep) pour les dépendances inter-packages
 - Turborepo pipeline : build → test (avec cache)
 - tsconfig.base.json partagé, étendu par chaque package
 
@@ -150,7 +150,7 @@ tsconfig.base.json
 - Package naming : `@tranquilload` (core) + `@tranquilload/adapters`
 
 **Important Decisions (Shape Architecture):**
-- Versioning : versions liées (lockstep) entre les deux packages
+- Versioning : indépendant entre les deux packages (peer dep `^X.Y.Z` ; seul un major core bump requiert une mise à jour dans adapters)
 - Changelog : Changesets
 - CI/CD : GitHub Actions (ci + release workflows)
 
@@ -256,7 +256,7 @@ import { fromNodeReadable }  from "@tranquilload/adapters/fromNodeReadable"
 
 ### Infrastructure & Publishing
 
-**Versioning :** lockstep entre `@tranquilload` et `@tranquilload/adapters` — un seul numéro de version, un seul CHANGELOG.
+**Versioning :** indépendant entre `@tranquilload/core` et `@tranquilload/adapters` — chaque package a son propre CHANGELOG. La peer dep `^X.Y.Z` dans adapters couvre les mises à jour minor/patch de core sans rebumper adapters.
 
 **Changesets** pour la gestion des releases :
 ```bash
@@ -286,7 +286,7 @@ pnpm changeset publish # publier sur npm
 **Cross-Component Dependencies:**
 - `errors.ts` est importé par tous les modules → à définir en premier
 - `services` (CompressionService, LoggerService) sont des dépendances du pipeline et du multipart
-- `adapters` dépend de `@tranquilload` en `workspace:*`
+- `adapters` dépend de `@tranquilload/core` en `workspace:^` (peerDep) / `workspace:*` (devDep)
 - Le Dual API wrapper (Promise ↔ Effect) est dans chaque module entry point, pas centralisé
 
 ## Implementation Patterns & Consistency Rules
@@ -523,7 +523,7 @@ Tout agent implémentant ce projet DOIT consulter la doc locale en priorité ava
 ```
 tranquilload/                         ← racine du monorepo
 ├── .changeset/
-│   └── config.json                   ← config lockstep versioning
+│   └── config.json                   ← config Changesets (versioning indépendant)
 ├── .github/
 │   └── workflows/
 │       ├── ci.yml                    ← lint + typecheck + test + build
@@ -632,7 +632,7 @@ packages/adapters/
 
 **Package boundary — core vs adapters :**
 - `@tranquilload` ne connaît ni S3, ni `File` browser, ni Node `Readable`
-- `@tranquilload/adapters` dépend de `@tranquilload` (`workspace:*`), jamais l'inverse
+- `@tranquilload/adapters` dépend de `@tranquilload/core` (`workspace:^` peerDep), jamais l'inverse
 
 **Layer boundary — interne vs externe :**
 - API publique (Promise/ReadableStream) : Layers fournis automatiquement
@@ -689,7 +689,7 @@ pnpm changeset publish                 # publier sur npm
 - Effect 3.19.19 (latest) + WHATWG Streams API — coexistent nativement
 - `@effect/vitest` est un wrapper vitest officiel — pas de conflit
 - `UploadError extends Error` + `_tag readonly literal` — compatible Effect `catchTag` et `Match.tag`
-- Changesets lockstep — cohérent avec 2 packages fortement couplés
+- Changesets indépendant — chaque package versioned séparément, peer dep `^` assure la compatibilité
 
 **Pattern Consistency:**
 - `Context.Tag` + `interface` + `Layer.Live` dans le même fichier ↔ structure `services/` ✅
@@ -699,7 +699,7 @@ pnpm changeset publish                 # publier sur npm
 
 **Structure Alignment:**
 - `errors/` en premier dans la séquence d'implémentation — toutes les dépendances satisfaites ✅
-- `@tranquilload/adapters` dépend de `@tranquilload workspace:*`, jamais l'inverse ✅
+- `@tranquilload/adapters` dépend de `@tranquilload/core` (`workspace:^` peerDep), jamais l'inverse ✅
 - `from-node-readable.ts` seul fichier autorisé à importer `node:stream` ✅
 
 ---
@@ -783,7 +783,7 @@ Composé avec le retry dans `upload-stream.ts`. Émet `CircuitOpen` event dans `
 - [x] Error surface : `UploadError extends Error` + `_tag`
 - [x] Module exports : granulaires, sans `/core/` dans le chemin
 - [x] Package naming : `@tranquilload` + `@tranquilload/adapters`
-- [x] Versioning : lockstep + Changesets
+- [x] Versioning : indépendant + Changesets
 - [x] CI/CD : GitHub Actions
 - [x] Build : tsdown + pnpm workspaces + Turborepo
 - [x] Test : vitest + `@effect/vitest`

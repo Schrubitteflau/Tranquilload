@@ -26,10 +26,10 @@ Toute référence à `packages/core/` dans les specs est à lire comme `packages
 - **TypeScript** — strict mode, `declaration: true` (pas `isolatedDeclarations` — incompatible avec `Context.Tag` d'Effect, TS9021), target ES2022, module NodeNext
 - **effect** `3.19.19` — peer dependency dans les deux packages. Ne jamais bundler deux copies : Context.Tag repose sur l'égalité de référence
 - **tsdown** — build ESM + CJS + `.d.ts` via Oxc. Sorties : `dist/esm/`, `dist/cjs/`, `dist/types/`. Successeur de tsup (tsup est abandonné, ne pas l'utiliser)
-- **pnpm workspaces** — monorepo 2 packages. Référencer core depuis adapters via `workspace:*`
+- **pnpm workspaces** — monorepo 2 packages. Référencer core depuis adapters via `workspace:^` (peerDep) et `workspace:*` (devDep)
 - **Turborepo** — pipeline `build → test` avec cache. Commande : `pnpm turbo build` / `pnpm turbo test`
 - **vitest** + **@effect/vitest** — test runner officiel Effect, évite le boilerplate `Effect.runPromise` dans les tests
-- **Changesets** — versioning lockstep des 2 packages (`@tranquilload` + `@tranquilload/adapters`)
+- **Changesets** — versioning indépendant des 2 packages (`@tranquilload/core` + `@tranquilload/adapters`) ; peer dep `^X.Y.Z` couvre les mises à jour minor/patch de core sans rebumper adapters
 - **WHATWG Streams API** — `ReadableStream`, `TransformStream`, `WritableStream` comme primitives. Disponibles Node 18+, browser, Bun, Deno
 - **Documentation Effect locale** — repo cloné dans `effect/` à la racine. Toujours consulter `effect/docs/` en priorité avant toute recherche web
 
@@ -69,7 +69,7 @@ Toute référence à `packages/core/` dans les specs est à lire comme `packages
 
 **Imports :**
 - Exports granulaires via sous-chemins : `@tranquilload/core/multipart`, `@tranquilload/core/oneshot`, etc. — jamais `@tranquilload/core` seul
-- `@tranquilload/adapters` dépend de `@tranquilload/core` via `workspace:*` — jamais l'inverse
+- `@tranquilload/adapters` dépend de `@tranquilload/core` via `workspace:^` (peerDep) / `workspace:*` (devDep) — jamais l'inverse
 - `from-node-readable.ts` est le seul fichier autorisé à importer `node:stream`
 - `web-locks.ts` est le seul fichier autorisé à utiliser `navigator.locks`
 
@@ -172,7 +172,7 @@ Toute référence à `packages/core/` dans les specs est à lire comme `packages
 - `pnpm changeset` — décrire un changement (patch/minor/major) avant de committer
 - `pnpm changeset version` — bumper les versions + générer CHANGELOG (dans la "Version Packages" PR)
 - `pnpm changeset publish` — publier sur npm (géré par GitHub Actions `release.yml`)
-- Versioning **lockstep** : `@tranquilload` et `@tranquilload/adapters` ont toujours la même version
+- Versioning **indépendant** : `@tranquilload/core` et `@tranquilload/adapters` peuvent évoluer séparément ; seul un major bump de core requiert une mise à jour de la peer dep dans adapters
 
 **CI/CD (GitHub Actions) :**
 - `ci.yml` : typecheck + test + build sur chaque push/PR — doit passer avant merge
@@ -184,7 +184,7 @@ Toute référence à `packages/core/` dans les specs est à lire comme `packages
 2. `services/` (CompressionService, LoggerService)
 3. `utils/` (normalizeCallback, fromAbortSignal)
 4. Modules core (`multipart/`, `oneshot/`, `pipeline/`, `progress/`)
-5. `adapters/` (dépend de core via `workspace:*`)
+5. `adapters/` (dépend de core via `workspace:^` peerDep / `workspace:*` devDep)
 
 ### Critical Don't-Miss Rules
 
