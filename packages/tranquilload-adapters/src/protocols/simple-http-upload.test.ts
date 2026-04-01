@@ -49,9 +49,10 @@ describe("simpleHttpUpload", () => {
     )
 
     const adapter = simpleHttpUpload({ url: "https://example.com/upload" })
-    await expect(adapter.upload(new ReadableStream())).rejects.toBeInstanceOf(
-      CompleteUploadError
-    )
+    const error = await adapter.upload(new ReadableStream()).catch((e) => e)
+    expect(error).toBeInstanceOf(CompleteUploadError)
+    expect(error.cause).toBeInstanceOf(Error)
+    expect((error.cause as Error).message).toBe("HTTP 403 Forbidden")
   })
 
   it("rejects with AbortError when fetch is aborted", async () => {
@@ -63,11 +64,12 @@ describe("simpleHttpUpload", () => {
   })
 
   it("rejects with CompleteUploadError on network failure", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Failed to fetch")))
+    const networkError = new Error("Failed to fetch")
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(networkError))
 
     const adapter = simpleHttpUpload({ url: "https://example.com/upload" })
-    await expect(adapter.upload(new ReadableStream())).rejects.toBeInstanceOf(
-      CompleteUploadError
-    )
+    const error = await adapter.upload(new ReadableStream()).catch((e) => e)
+    expect(error).toBeInstanceOf(CompleteUploadError)
+    expect(error.cause).toBe(networkError)
   })
 })

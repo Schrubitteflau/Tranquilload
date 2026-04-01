@@ -1,6 +1,6 @@
 # Story 8.4: Simple HTTP Upload Adapter
 
-Status: review
+Status: done
 
 ## Story
 
