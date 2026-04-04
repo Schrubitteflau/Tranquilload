@@ -1,6 +1,6 @@
 # Story 9.1: CI Workflow
 
-Status: review
+Status: done
 
 ## Story
 
@@ -145,7 +145,33 @@ claude-opus-4-6
 ### Change Log
 
 - 2026-04-04: Created `.github/workflows/ci.yml` — GitHub Actions CI workflow with Turborepo cache
+- 2026-04-04: [Review] Removed explicit `version: 9.0.0` from pnpm/action-setup — reads from `packageManager` field in package.json to avoid drift
 
 ### File List
 
 - `.github/workflows/ci.yml` (new)
+
+## Senior Developer Review (AI)
+
+**Reviewer:** Grochonnou — 2026-04-04
+**Model:** claude-opus-4-6
+**Outcome:** Approved
+
+### AC Verification
+
+- AC#1 (push/PR triggers, Turborepo order, failure blocks merge): **IMPLEMENTED** ✅
+- AC#2 (Turborepo cache for unchanged packages): **IMPLEMENTED** ✅
+
+### Task Audit
+
+All 10 subtasks marked [x] verified as genuinely done against `ci.yml` content.
+
+### Findings
+
+| # | Severity | Description | Resolution |
+|---|----------|-------------|------------|
+| 1 | LOW | pnpm version duplicated in ci.yml and package.json — risk of drift | Fixed: removed explicit `version: 9.0.0`, pnpm/action-setup@v4 reads from `packageManager` |
+
+### Summary
+
+Clean implementation. Single-file story, precise match to architecture spec and turbo.json config. No security, performance, or quality issues. 1 LOW maintenance concern fixed during review.
