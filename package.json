@@ -6,12 +6,15 @@
     "build": "turbo build",
     "test": "turbo test",
     "dev": "turbo dev",
-    "typecheck": "turbo typecheck"
+    "typecheck": "turbo typecheck",
+    "changeset": "changeset",
+    "version-packages": "changeset version"
   },
   "engines": {
     "node": ">=22"
   },
   "devDependencies": {
+    "@changesets/cli": "latest",
     "turbo": "latest",
     "typescript": "^5.5.0"
   }
