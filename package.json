@@ -14,8 +14,8 @@
     "node": ">=22"
   },
   "devDependencies": {
-    "@changesets/cli": "latest",
-    "turbo": "latest",
+    "@changesets/cli": "^2.30.0",
+    "turbo": "^2.9.3",
     "typescript": "^5.5.0"
   }
 }

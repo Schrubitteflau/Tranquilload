@@ -1,6 +1,6 @@
 # Story 9.2: Automated Release with Changesets
 
-Status: review
+Status: done
 
 ## Story
 
@@ -169,7 +169,7 @@ None — clean implementation, no issues encountered.
 
 ### Completion Notes List
 
-- Task 1: Added `@changesets/cli@2.30.0` to root devDependencies, added `changeset` and `version-packages` scripts, lockfile updated.
+- Task 1: Added `@changesets/cli` (latest) to root devDependencies, added `changeset` and `version-packages` scripts, lockfile updated.
 - Task 2: Created `.github/workflows/release.yml` matching the recommended template — trigger on `master`, pnpm/action-setup@v4 (no explicit version), Node 22, `pnpm turbo build` before publish, `changesets/action@v1` with `GITHUB_TOKEN` + `NPM_TOKEN`.
 - Task 3: YAML validated with `js-yaml`, trigger confirmed on `master`, `baseBranch` in `.changeset/config.json` matches. Full CI passes: 149 tests (122 core + 27 adapters), build and typecheck green.
 - Note: `NPM_TOKEN` must be manually added as a GitHub repository secret by the maintainer before first publish.
@@ -183,3 +183,4 @@ None — clean implementation, no issues encountered.
 - `package.json` (modified — added `@changesets/cli` devDep + `changeset`/`version-packages` scripts)
 - `pnpm-lock.yaml` (modified — lockfile updated with @changesets/cli dependencies)
 - `.github/workflows/release.yml` (new — automated release workflow)
+- `RELEASE_FLOW.md` (new — developer-facing release process documentation)

@@ -5,6 +5,10 @@ on:
     branches:
       - master
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   release:
     name: Release
@@ -24,6 +28,14 @@ jobs:
 
       - name: Build packages
         run: pnpm turbo build
+
+      - name: Cache Turborepo
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ hashFiles('turbo.json') }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
 
       - name: Create Release Pull Request or Publish to npm
         uses: changesets/action@v1
