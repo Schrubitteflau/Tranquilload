@@ -267,7 +267,7 @@ pnpm changeset publish # publier sur npm
 
 **GitHub Actions — deux workflows :**
 - `ci.yml` : sur push/PR → `typecheck + test + build`
-- `release.yml` : sur merge `main` → Changesets Action crée PR de release ; merge → publish npm
+- `release.yml` : sur merge `master` → Changesets Action crée PR de release ; merge → publish npm
 
 ---
 

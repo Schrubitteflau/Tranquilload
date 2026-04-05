@@ -34,7 +34,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-14
-last_updated: 2026-04-05 # updated: 9-2-automated-release-with-changesets → done
+last_updated: 2026-04-05 # updated: epic-9-retrospective → done
 project: Tranquilload
 project_key: NOKEY
 tracking_system: file-system
@@ -99,7 +99,7 @@ development_status:
   epic-8-retrospective: done
 
   # Epic 9: CI/CD & Publishing
-  epic-9: in-progress
+  epic-9: done
   9-1-ci-workflow: done
   9-2-automated-release-with-changesets: done
-  epic-9-retrospective: optional
+  epic-9-retrospective: done

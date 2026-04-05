@@ -184,7 +184,7 @@ Toute référence à `packages/core/` dans les specs est à lire comme `packages
 2. `services/` (CompressionService, LoggerService)
 3. `utils/` (normalizeCallback, fromAbortSignal)
 4. Modules core (`multipart/`, `oneshot/`, `pipeline/`, `progress/`)
-5. `adapters/` (dépend de core via `workspace:^`)
+5. `adapters/` (dépend de core via `workspace:^` peerDep / `workspace:*` devDep)
 
 ### Critical Don't-Miss Rules
 
@@ -240,4 +240,4 @@ When implementing stories, consult these documents in order of priority:
 - Update when technology stack or patterns change
 - Remove rules that become obvious over time
 
-Last Updated: 2026-04-01
+Last Updated: 2026-04-05

@@ -240,4 +240,4 @@ When implementing stories, consult these documents in order of priority:
 - Update when technology stack or patterns change
 - Remove rules that become obvious over time
 
-Last Updated: 2026-03-28
+Last Updated: 2026-04-05
