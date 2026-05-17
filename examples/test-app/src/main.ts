@@ -1,0 +1,340 @@
+import { uploadMultipart } from "@tranquilload/core/multipart"
+import { uploadOnce } from "@tranquilload/core/oneshot"
+import { compress } from "@tranquilload/core/pipeline"
+import { fromFile } from "@tranquilload/adapters/fromFile"
+import type { UploadEvent } from "@tranquilload/core/progress"
+
+// ---------- DOM ----------
+const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
+
+const fileInput        = $<HTMLInputElement>("file")
+const fileInfo         = $<HTMLParagraphElement>("file-info")
+const startBtn         = $<HTMLButtonElement>("start")
+const abortBtn         = $<HTMLButtonElement>("abort")
+const chunkSizeInput   = $<HTMLInputElement>("chunk-size")
+const concurrencyInput = $<HTMLInputElement>("concurrency")
+const compressInput    = $<HTMLInputElement>("compress")
+const progressFill     = $<HTMLDivElement>("progress-fill")
+const progressText     = $<HTMLParagraphElement>("progress-text")
+const uploadIdDisplay  = $<HTMLParagraphElement>("upload-id-display")
+const logEl            = $<HTMLPreElement>("log")
+const resumeBanner     = $<HTMLElement>("resume-banner")
+const resumeInfo       = $<HTMLParagraphElement>("resume-info")
+const resumeBtn        = $<HTMLButtonElement>("resume")
+const dismissResumeBtn = $<HTMLButtonElement>("dismiss-resume")
+const clearResumeBtn   = $<HTMLButtonElement>("clear-resume")
+const applyChaosBtn    = $<HTMLButtonElement>("apply-chaos")
+const chaosFailSign     = $<HTMLInputElement>("chaos-fail-sign")
+const chaosFailComplete = $<HTMLInputElement>("chaos-fail-complete")
+const chaosSlowSign     = $<HTMLInputElement>("chaos-slow-sign")
+
+// ---------- State ----------
+const RESUME_KEY = "tranquilload:resume"
+interface ResumeState {
+  uploadId: string
+  key: string
+  filename: string
+  size: number
+  chunkSize: number
+}
+
+let currentAbort: AbortController | null = null
+
+// ---------- Helpers ----------
+function log(line: string): void {
+  const time = new Date().toISOString().slice(11, 23)
+  logEl.textContent = `[${time}] ${line}\n${logEl.textContent}`
+}
+
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`
+  return `${(n / 1024 / 1024).toFixed(2)} MiB`
+}
+
+function updateProgress(uploaded: number, total: number | null): void {
+  if (total) {
+    const pct = Math.min(100, (uploaded / total) * 100)
+    progressFill.style.width = `${pct}%`
+    progressText.textContent = `${fmtBytes(uploaded)} / ${fmtBytes(total)} (${pct.toFixed(1)}%)`
+  } else {
+    progressText.textContent = `${fmtBytes(uploaded)} uploaded (total unknown)`
+  }
+}
+
+function setUiBusy(busy: boolean): void {
+  startBtn.disabled = busy
+  abortBtn.disabled = !busy
+  fileInput.disabled = busy
+}
+
+function saveResume(state: ResumeState): void {
+  localStorage.setItem(RESUME_KEY, JSON.stringify(state))
+}
+
+function loadResume(): ResumeState | null {
+  const raw = localStorage.getItem(RESUME_KEY)
+  if (!raw) return null
+  try { return JSON.parse(raw) as ResumeState } catch { return null }
+}
+
+function clearResume(): void {
+  localStorage.removeItem(RESUME_KEY)
+  resumeBanner.hidden = true
+}
+
+// ---------- Server callbacks (multipart) ----------
+interface MultipartContext {
+  key: string
+  uploadId: string
+}
+
+function makeMultipartCallbacks(file: File, ctx: MultipartContext) {
+  const initiate = async (): Promise<{ uploadId: string }> => {
+    if (ctx.uploadId) {
+      log(`Reusing uploadId ${ctx.uploadId} (resume)`)
+      return { uploadId: ctx.uploadId }
+    }
+    const res = await fetch("/api/multipart/initiate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: file.name, contentType: file.type }),
+    })
+    if (!res.ok) throw new Error(`initiate failed: HTTP ${res.status}`)
+    const data = await res.json() as { uploadId: string; key: string }
+    ctx.uploadId = data.uploadId
+    ctx.key = data.key
+    return { uploadId: data.uploadId }
+  }
+
+  const uploadPart = async (partNumber: number, chunk: Uint8Array): Promise<string> => {
+    const signRes = await fetch("/api/multipart/sign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: ctx.key, uploadId: ctx.uploadId, partNumber }),
+    })
+    if (!signRes.ok) throw new Error(`sign failed: HTTP ${signRes.status}`)
+    const { url } = await signRes.json() as { url: string }
+
+    const putRes = await fetch(url, { method: "PUT", body: chunk })
+    if (!putRes.ok) throw new Error(`PUT part ${partNumber} failed: HTTP ${putRes.status}`)
+    const etag = putRes.headers.get("ETag")
+    if (!etag) throw new Error(`PUT part ${partNumber}: missing ETag`)
+    return etag.replace(/"/g, "")
+  }
+
+  const completeUpload = async (
+    uploadId: string,
+    parts: ReadonlyArray<{ partNumber: number; etag: string }>
+  ): Promise<void> => {
+    const res = await fetch("/api/multipart/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: ctx.key, uploadId, parts }),
+    })
+    if (!res.ok) throw new Error(`complete failed: HTTP ${res.status}`)
+  }
+
+  const reconcileCompletedParts = async (): Promise<ReadonlyArray<{ partNumber: number; etag: string }>> => {
+    const res = await fetch(
+      `/api/multipart/parts?key=${encodeURIComponent(ctx.key)}&uploadId=${encodeURIComponent(ctx.uploadId)}`
+    )
+    if (!res.ok) throw new Error(`list parts failed: HTTP ${res.status}`)
+    const data = await res.json() as { parts: ReadonlyArray<{ partNumber: number; etag: string }> }
+    log(`Reconciled ${data.parts.length} parts already on server`)
+    return data.parts
+  }
+
+  return { initiate, uploadPart, completeUpload, reconcileCompletedParts }
+}
+
+// ---------- Upload runners ----------
+async function runMultipart(file: File, resumeFrom: ResumeState | null): Promise<void> {
+  setUiBusy(true)
+  logEl.textContent = ""
+  log(`Starting multipart upload: ${file.name} (${fmtBytes(file.size)})`)
+
+  const { stream, totalBytes } = fromFile(file)
+  const chunkSize = Math.max(5, Number(chunkSizeInput.value)) * 1024 * 1024
+  const maxConcurrency = Math.max(1, Number(concurrencyInput.value))
+
+  const ctx: MultipartContext = resumeFrom
+    ? { key: resumeFrom.key, uploadId: resumeFrom.uploadId }
+    : { key: "", uploadId: "" }
+
+  const callbacks = makeMultipartCallbacks(file, ctx)
+  currentAbort = new AbortController()
+
+  const { uploadId, result, events } = uploadMultipart({
+    stream,
+    totalBytes,
+    chunkSize,
+    maxConcurrency,
+    signal: currentAbort.signal,
+    initiate: callbacks.initiate,
+    uploadPart: callbacks.uploadPart,
+    completeUpload: callbacks.completeUpload,
+    reconcileCompletedParts: resumeFrom ? callbacks.reconcileCompletedParts : undefined,
+    pipeline: compressInput.checked ? compress("deflate-raw") : undefined,
+  })
+
+  uploadId.then((id) => {
+    uploadIdDisplay.textContent = `uploadId: ${id}`
+    saveResume({
+      uploadId: id,
+      key: ctx.key,
+      filename: file.name,
+      size: file.size,
+      chunkSize,
+    })
+  }).catch(() => {})
+
+  // Drain the events stream
+  ;(async () => {
+    const reader = events.getReader()
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      handleEvent(value, totalBytes)
+    }
+  })().catch((e) => log(`event stream error: ${e}`))
+
+  try {
+    await result
+    log(`✅ Upload completed`)
+    clearResume()
+  } catch (err) {
+    const e = err as { _tag?: string; message?: string }
+    log(`❌ ${e._tag ?? "Error"}: ${e.message ?? String(err)}`)
+  } finally {
+    setUiBusy(false)
+    currentAbort = null
+  }
+}
+
+function handleEvent(event: UploadEvent, total: number): void {
+  switch (event._tag) {
+    case "UploadInitiated":
+      log(`→ UploadInitiated  uploadId=${event.uploadId}`)
+      break
+    case "PartCompleted":
+      log(`→ PartCompleted    part=${event.partNumber} bytes=${fmtBytes(event.bytesUploaded)} etag=${event.etag.slice(0, 12)}…`)
+      break
+    case "ProgressTick":
+      updateProgress(event.bytesUploaded, total)
+      break
+    case "CircuitOpen":
+      log(`⚠ CircuitOpen      failedParts=${event.failedParts}`)
+      break
+    case "UploadCompleted":
+      log(`→ UploadCompleted  totalParts=${event.totalParts}`)
+      break
+  }
+}
+
+async function runOneshot(file: File): Promise<void> {
+  setUiBusy(true)
+  logEl.textContent = ""
+  log(`Starting one-shot upload: ${file.name} (${fmtBytes(file.size)})`)
+  updateProgress(0, file.size)
+
+  const { stream } = fromFile(file)
+  currentAbort = new AbortController()
+
+  const { result, events } = uploadOnce({
+    stream,
+    signal: currentAbort.signal,
+    // Use the raw File as the request body to sidestep browser streaming
+    // body limitations (fetch + ReadableStream needs `duplex: 'half'` + HTTP/2).
+    upload: async (_stream) => {
+      const res = await fetch(
+        `/api/oneshot?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`,
+        { method: "PUT", body: file, signal: currentAbort?.signal }
+      )
+      if (!res.ok) throw new Error(`one-shot upload failed: HTTP ${res.status}`)
+    },
+  })
+
+  ;(async () => {
+    const reader = events.getReader()
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      handleEvent(value, file.size)
+    }
+  })().catch((e) => log(`event stream error: ${e}`))
+
+  try {
+    await result
+    updateProgress(file.size, file.size)
+    log(`✅ Upload completed`)
+  } catch (err) {
+    const e = err as { _tag?: string; message?: string }
+    log(`❌ ${e._tag ?? "Error"}: ${e.message ?? String(err)}`)
+  } finally {
+    setUiBusy(false)
+    currentAbort = null
+  }
+}
+
+// ---------- UI wiring ----------
+fileInput.addEventListener("change", () => {
+  const file = fileInput.files?.[0]
+  fileInfo.textContent = file ? `${file.name} — ${fmtBytes(file.size)} — ${file.type || "unknown type"}` : ""
+})
+
+startBtn.addEventListener("click", () => {
+  const file = fileInput.files?.[0]
+  if (!file) { log("Pick a file first"); return }
+  const mode = (document.querySelector<HTMLInputElement>("input[name=mode]:checked"))?.value
+  if (mode === "oneshot") void runOneshot(file)
+  else void runMultipart(file, null)
+})
+
+abortBtn.addEventListener("click", () => {
+  currentAbort?.abort()
+  log("Abort requested")
+})
+
+resumeBtn.addEventListener("click", () => {
+  const state = loadResume()
+  const file = fileInput.files?.[0]
+  if (!state) return
+  if (!file) { log("Pick the SAME file again to resume"); return }
+  if (file.name !== state.filename || file.size !== state.size) {
+    log(`File mismatch — expected ${state.filename} (${state.size} bytes)`)
+    return
+  }
+  resumeBanner.hidden = true
+  void runMultipart(file, state)
+})
+
+dismissResumeBtn.addEventListener("click", () => { resumeBanner.hidden = true })
+clearResumeBtn.addEventListener("click", () => {
+  clearResume()
+  log("Cleared saved resume state")
+})
+
+applyChaosBtn.addEventListener("click", async () => {
+  const body = {
+    failSignNextN: Number(chaosFailSign.value),
+    failCompleteNextN: Number(chaosFailComplete.value),
+    slowSignMs: Number(chaosSlowSign.value),
+  }
+  const res = await fetch("/api/chaos", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  const data = await res.json()
+  log(`Chaos updated: ${JSON.stringify(data)}`)
+})
+
+// On load: surface any pending resume state
+;(() => {
+  const state = loadResume()
+  if (state) {
+    resumeInfo.textContent = `${state.filename} (${fmtBytes(state.size)}) · uploadId=${state.uploadId}`
+    resumeBanner.hidden = false
+  }
+})()

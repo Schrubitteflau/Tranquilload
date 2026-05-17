@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tranquilload · Test Harness</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Tranquilload</h1>
+        <p class="tagline">Test harness — live against MinIO</p>
+      </header>
+
+      <section class="panel">
+        <h2>1. Pick a file</h2>
+        <input type="file" id="file" />
+        <p id="file-info" class="muted"></p>
+      </section>
+
+      <section class="panel">
+        <h2>2. Choose mode &amp; settings</h2>
+        <div class="row">
+          <label><input type="radio" name="mode" value="multipart" checked /> Multipart</label>
+          <label><input type="radio" name="mode" value="oneshot" /> One-shot</label>
+        </div>
+        <div class="row" id="multipart-settings">
+          <label>Chunk size (MiB) <input type="number" id="chunk-size" value="5" min="5" /></label>
+          <label>Max concurrency <input type="number" id="concurrency" value="4" min="1" max="16" /></label>
+          <label><input type="checkbox" id="compress" /> Compress (deflate-raw)</label>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>3. Chaos (server-side fault injection)</h2>
+        <div class="row">
+          <label>Fail next N sign requests <input type="number" id="chaos-fail-sign" value="0" min="0" /></label>
+          <label>Fail next N complete requests <input type="number" id="chaos-fail-complete" value="0" min="0" /></label>
+          <label>Slow sign by (ms) <input type="number" id="chaos-slow-sign" value="0" min="0" step="100" /></label>
+          <button id="apply-chaos" type="button">Apply</button>
+        </div>
+      </section>
+
+      <section class="panel actions">
+        <button id="start" type="button">Start upload</button>
+        <button id="abort" type="button" disabled>Abort</button>
+        <button id="clear-resume" type="button" class="ghost">Clear saved resume state</button>
+      </section>
+
+      <section class="panel" id="resume-banner" hidden>
+        <strong>Unfinished upload detected.</strong>
+        <p id="resume-info" class="muted"></p>
+        <button id="resume" type="button">Resume</button>
+        <button id="dismiss-resume" type="button" class="ghost">Dismiss</button>
+      </section>
+
+      <section class="panel">
+        <h2>Progress</h2>
+        <div class="progress-bar"><div id="progress-fill"></div></div>
+        <p id="progress-text" class="muted">idle</p>
+        <p id="upload-id-display" class="muted"></p>
+      </section>
+
+      <section class="panel">
+        <h2>Event log</h2>
+        <pre id="log"></pre>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
