@@ -1,9 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Cause, Effect, Fiber, Ref, Schedule, Stream, TestClock } from "effect"
-import { AbortError, CircuitOpenError, CompleteUploadError, MaxRetriesExceededError, PartUploadError, PresignedUrlError, ReconcileError } from "../errors/upload-error.js"
+import { AbortError, CircuitOpenError, CompleteUploadError, MaxRetriesExceededError, PartUploadError, PresignedUrlError, ReconcileError, ResumeMismatchError } from "../errors/upload-error.js"
 import type { UploadEvent } from "../progress/upload-event.js"
 import { LoggerServiceLive } from "../services/logger-service.js"
-import { uploadMultipartEffect, type CompletedPart } from "./upload-stream.js"
+import { uploadMultipartEffect, type CompletedPart, type ResumeState } from "./upload-stream.js"
 
 const fromBytes = (bytes: Uint8Array): ReadableStream<Uint8Array> =>
   new ReadableStream({ start: c => { c.enqueue(bytes); c.close() } })
@@ -366,4 +366,170 @@ describe("uploadMultipartEffect with circuitBreaker", () => {
         .not.toThrow()
     })
   })
+})
+
+describe("ResumeState validation", () => {
+  const baseOptions = {
+    stream: new ReadableStream<Uint8Array>({ start: (c) => { c.enqueue(new Uint8Array(10)); c.close() } }),
+    chunkSize: 10,
+    uploadPart: () => "etag",
+    completeUpload: () => {},
+  } as const
+
+  const validResumeState = (overrides: Partial<ResumeState> = {}): ResumeState => ({
+    version: 1,
+    uploadId: "upload-stored-1",
+    chunkSize: 10,
+    contentDigestCaptured: false,
+    ...overrides,
+  })
+
+  it("throws TypeError when resumeFrom.uploadId is empty string", () => {
+    expect(() =>
+      uploadMultipartEffect({
+        ...baseOptions,
+        resumeFrom: validResumeState({ uploadId: "" }),
+      })
+    ).toThrow(/non-empty string/)
+  })
+
+  it("throws ResumeMismatchError(version_mismatch) when version != 1", () => {
+    let caught: unknown
+    try {
+      uploadMultipartEffect({
+        ...baseOptions,
+        // Cast: future v2 schema would pass typecheck, but here we force-test the v1 check.
+        resumeFrom: { ...validResumeState(), version: 2 as unknown as 1 },
+      })
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toBeInstanceOf(ResumeMismatchError)
+    expect((caught as ResumeMismatchError).reason).toBe("version_mismatch")
+  })
+
+  it("throws ResumeMismatchError(chunksize_mismatch) when chunkSize differs", () => {
+    let caught: unknown
+    try {
+      uploadMultipartEffect({
+        ...baseOptions,
+        chunkSize: 10,
+        resumeFrom: validResumeState({ chunkSize: 5 }),
+      })
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toBeInstanceOf(ResumeMismatchError)
+    expect((caught as ResumeMismatchError).reason).toBe("chunksize_mismatch")
+  })
+
+  it("throws ResumeMismatchError(pipeline_mismatch) when pipelineIdentity differs", () => {
+    let caught: unknown
+    try {
+      uploadMultipartEffect({
+        ...baseOptions,
+        pipelineIdentity: "gzip-v1",
+        resumeFrom: validResumeState({ pipelineIdentity: "deflate-v1" }),
+      })
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toBeInstanceOf(ResumeMismatchError)
+    expect((caught as ResumeMismatchError).reason).toBe("pipeline_mismatch")
+  })
+
+  it("throws ResumeMismatchError(content_mismatch) when contentDigestCaptured=true but contentDigest is undefined (F9)", () => {
+    let caught: unknown
+    try {
+      uploadMultipartEffect({
+        ...baseOptions,
+        resumeFrom: validResumeState({
+          contentDigestCaptured: true,
+          contentDigest: undefined,
+        }),
+      })
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toBeInstanceOf(ResumeMismatchError)
+    expect((caught as ResumeMismatchError).reason).toBe("content_mismatch")
+  })
+
+  it.effect("fails with ResumeMismatchError(content_mismatch) at runtime when digest value differs", () =>
+    Effect.gen(function* () {
+      const exit = yield* Stream.runCollect(
+        uploadMultipartEffect({
+          stream: new ReadableStream<Uint8Array>({ start: (c) => { c.enqueue(new Uint8Array(10)); c.close() } }),
+          chunkSize: 10,
+          uploadPart: () => "etag",
+          completeUpload: () => {},
+          resumeFrom: validResumeState({
+            contentDigest: "digest-original",
+            contentDigestCaptured: true,
+          }),
+          getContentDigest: () => "digest-different",
+        })
+      ).pipe(Effect.exit, Effect.provide(LoggerServiceLive))
+
+      expect(exit._tag).toBe("Failure")
+      const err = Cause.squash((exit as Extract<typeof exit, { _tag: "Failure" }>).cause)
+      expect(err).toBeInstanceOf(ResumeMismatchError)
+      expect((err as ResumeMismatchError).reason).toBe("content_mismatch")
+    })
+  )
+
+  it.effect("accepts a valid resumeFrom: no throw, uploadId honored, reconcile called", () =>
+    Effect.gen(function* () {
+      let initiateCalled = 0
+      let reconcileCalls = 0
+      const completedWith: { uploadId: string; parts: ReadonlyArray<CompletedPart> } = { uploadId: "", parts: [] }
+
+      const events = yield* Stream.runCollect(
+        uploadMultipartEffect({
+          stream: new ReadableStream<Uint8Array>({ start: (c) => { c.enqueue(new Uint8Array(20)); c.close() } }),
+          chunkSize: 10,
+          uploadPart: (n) => `fresh-etag-${n}`,
+          completeUpload: (uploadId, parts) => {
+            completedWith.uploadId = uploadId
+            completedWith.parts = parts
+          },
+          initiate: () => { initiateCalled++; return { uploadId: "should-not-be-used" } },
+          reconcileCompletedParts: () => {
+            reconcileCalls++
+            return [{ partNumber: 1, etag: "etag-reconciled-1" }]
+          },
+          resumeFrom: validResumeState({ uploadId: "upload-stored-1", chunkSize: 10 }),
+        })
+      ).pipe(
+        Effect.map((chunk) => Array.from(chunk)),
+        Effect.provide(LoggerServiceLive)
+      )
+
+      expect(initiateCalled).toBe(0)
+      expect(reconcileCalls).toBe(1)
+      expect(completedWith.uploadId).toBe("upload-stored-1")
+    })
+  )
+
+  it.effect("does NOT emit UploadInitiated on resume (G1)", () =>
+    Effect.gen(function* () {
+      const events = yield* Stream.runCollect(
+        uploadMultipartEffect({
+          stream: new ReadableStream<Uint8Array>({ start: (c) => { c.enqueue(new Uint8Array(10)); c.close() } }),
+          chunkSize: 10,
+          uploadPart: () => "etag-1",
+          completeUpload: () => {},
+          initiate: () => ({ uploadId: "ignored" }),
+          resumeFrom: validResumeState({ uploadId: "upload-stored-1", chunkSize: 10 }),
+        })
+      ).pipe(
+        Effect.map((chunk) => Array.from(chunk)),
+        Effect.provide(LoggerServiceLive)
+      )
+
+      expect(events.find((e) => e._tag === "UploadInitiated")).toBeUndefined()
+      // First event must come from the parts stream
+      expect(events[0]?._tag).toBe("PartCompleted")
+    })
+  )
 })

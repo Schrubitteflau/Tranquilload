@@ -6,5 +6,7 @@ export {
   ReconcileError,
   CompleteUploadError,
   AbortError,
+  CircuitOpenError,
+  ResumeMismatchError,
   type UploadError,
 } from "./upload-error.js"

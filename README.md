@@ -27,7 +27,7 @@ What "configure-once" gives you:
 - **Adaptive chunk size** — measure throughput per part and shrink/grow the next chunk accordingly (`networkMultiplier`, `computeOptimalPartSize`)
 - **Circuit breaker** — stop retrying when the network is clearly gone
 - **Pipeline composition** — compress, hash, encrypt, or any custom `Transform` between source and uploader
-- **Closed, exhaustive error union** — `UploadError` is a discriminated union of 8 variants; no `catch (e: unknown)`
+- **Closed, exhaustive error union** — `UploadError` is a discriminated union of 9 variants; no `catch (e: unknown)`
 - **`UploadEvent` stream** — every state change emits a tagged event; subscribe if you care, ignore if you don't
 
 ---
@@ -42,6 +42,11 @@ pnpm add @tranquilload/core @tranquilload/adapters effect
 `effect` is a peer dependency — installed once, shared across both packages.
 
 > **Requires Node 22+.** Older runtimes are missing `process.getBuiltinModule`, used by the build toolchain.
+
+> **HTTP streaming requirements.** `simpleHttpUpload` streams the request body
+> by default (with `duplex: 'half'`), which requires HTTP/2 and a runtime that
+> understands the `duplex` option (Node 22+, modern browsers). For HTTP/1.x
+> endpoints, opt in to `bufferMode: true` — see [Adapters → `simpleHttpUpload`](#httpstreaming).
 
 ---
 
@@ -108,22 +113,47 @@ await result;
 
 ### Resuming an upload after a refresh
 
-```ts
-const previousUploadId = localStorage.getItem("upload:current");
+The lib produces a `ResumeState` you persist and pass back. The lib re-validates
+`chunkSize`, `pipelineIdentity`, and the content digest before any byte is
+uploaded — see [Concepts → Resume Safety](#resumesafety) for what each field
+guards against.
 
-const { result } = uploadMultipart({
+```ts
+import type { ResumeState } from "@tranquilload/core/multipart"
+
+// First session — fresh init
+const { uploadId, resumeState, result } = uploadMultipart({
   stream,
   totalBytes,
   ...s3,
-  initiate: previousUploadId
-    ? () => ({ uploadId: previousUploadId })
-    : s3.initiate,
-  // Ask the server which parts are already there
-  reconcileCompletedParts: async () => {
-    const res = await fetch(`/api/parts?uploadId=${previousUploadId}`);
-    return res.json(); // [{ partNumber, etag }, ...]
-  },
+  getContentDigest: () => `${file.name}|${file.size}|${file.lastModified}`,
+  pipelineIdentity: "deflate-v1", // if you set a `pipeline`
 });
+
+const state = await resumeState;
+localStorage.setItem("upload:current", JSON.stringify(state));
+
+await result;
+localStorage.removeItem("upload:current");
+
+// Subsequent session — resume
+const stored = localStorage.getItem("upload:current");
+if (stored) {
+  const parsed = JSON.parse(stored) as ResumeState;
+  const { result } = uploadMultipart({
+    stream,
+    totalBytes,
+    ...s3,
+    getContentDigest: () => `${file.name}|${file.size}|${file.lastModified}`,
+    pipelineIdentity: "deflate-v1",
+    reconcileCompletedParts: async () => {
+      const res = await fetch(`/api/parts?uploadId=${parsed.uploadId}`);
+      return res.json(); // [{ partNumber, etag }, ...]
+    },
+    resumeFrom: parsed,
+  });
+  await result;
+}
 ```
 
 ### Adaptive chunk size based on network throughput
@@ -205,7 +235,10 @@ const stream = uploadMultipart.effect({ ... }) // Stream<UploadEvent, UploadErro
 
 ### Errors are data
 
-`UploadError` is a closed, exhaustive discriminated union (8 variants — one per upload phase). Use `Match.tag` or a `switch` on `_tag`:
+`UploadError` is a closed, exhaustive discriminated union (9 variants — one
+per upload phase, plus `ResumeMismatchError` for resume validation refusals).
+Use `Match.tag` or a `switch` on `_tag`. `ResumeMismatchError` uses an internal
+`reason` discriminant — dispatch on it with a nested `Match.value`:
 
 ```ts
 import { Match } from "effect"
@@ -215,13 +248,64 @@ result.catch((err: UploadError) =>
     Match.tag("InitiateUploadError", () => /* safe to retry from scratch */ ),
     Match.tag("PartUploadError",     (e) => /* part ${e.partNumber} failed */ ),
     Match.tag("MaxRetriesExceededError", () => /* give up */ ),
+    Match.tag("ReconcileError",      () => /* parts state unknown */ ),
     Match.tag("CompleteUploadError", () => /* parts uploaded, retry .complete() or abort */ ),
+    Match.tag("PresignedUrlError",   () => /* could not obtain a signed URL */ ),
     Match.tag("CircuitOpenError",    () => /* too many failures, pause */ ),
     Match.tag("AbortError",          () => /* user cancelled */ ),
+    Match.tag("ResumeMismatchError", (e) =>
+      Match.value(e.reason).pipe(
+        Match.when("version_mismatch",   () => /* upgrade lib or clear state */),
+        Match.when("chunksize_mismatch", () => /* chunkSize changed; start over */),
+        Match.when("pipeline_mismatch",  () => /* pipeline changed; start over */),
+        Match.when("content_mismatch",   () => /* source content differs; start over */),
+        Match.exhaustive,
+      )
+    ),
     Match.exhaustive,
   )
 )
 ```
+
+<a id="resumesafety"></a>
+
+### Resume Safety
+
+`ResumeState` carries five validation fields. Each one is a tripwire for a
+silent-corruption class:
+
+| Field | Guards against |
+|---|---|
+| `version: 1` | Schema evolution — a v1 state passed to a future v2 lib fails fast with `ResumeMismatchError("version_mismatch")` instead of being silently misinterpreted |
+| `chunkSize` | Byte misalignment — changing `chunkSize` between sessions corrupts the completed object |
+| `pipelineIdentity` (opt-in) | Pipeline composition drift — resuming with a different compression algorithm produces a Frankenstein object |
+| `contentDigest` (opt-in, from `getContentDigest`) | Content swap — resuming with a different file of the same name+size uploads wrong bytes against the stored `uploadId` |
+| `contentDigestCaptured` | Persistence-layer field drop — if the original session captured a digest but the persisted state lost it, the lib refuses to resume |
+
+> **Compression non-determinism caveat.** Even with identical `pipelineIdentity`,
+> a non-deterministic pipeline (e.g. gzip with `mtime` headers, encryption with
+> random salt) produces different bytes per run. Resume against the same
+> uploaded parts only works if your pipeline is byte-deterministic. Verify
+> before relying on this.
+
+<a id="httpstreaming"></a>
+
+### `simpleHttpUpload` streaming vs buffered
+
+By default, `simpleHttpUpload` sends the source as a streaming `ReadableStream`
+body with `duplex: 'half'`. This requires:
+
+- An **HTTP/2** endpoint (modern browsers reject HTTP/1.x stream uploads).
+- A runtime that accepts the `duplex` flag on `fetch` (Node 22+, current
+  browsers). The flag is silently ignored on older runtimes — the request
+  shape is then wrong.
+
+For HTTP/1.x targets or older runtimes, opt in to `bufferMode: true`. The
+adapter drains the source into a `Blob` before sending; no `duplex` flag is
+required.
+
+> **Memory caveat.** `bufferMode: true` holds the entire source in memory.
+> **Do not enable for files larger than available memory.**
 
 ### Events are a stream
 
@@ -264,7 +348,7 @@ The peer range is `>=3.19.19` — covers minor/patch updates without requiring u
 ├── /pipeline    — Transform composition (compress, compose)
 ├── /services    — CompressionService, LoggerService (injectable Effect Layers)
 ├── /progress    — UploadEvent types
-└── /errors      — UploadError union (8 variants)
+└── /errors      — UploadError union (9 variants)
 
 @tranquilload/adapters
 ├── /fromFile             — File           → { stream, totalBytes }

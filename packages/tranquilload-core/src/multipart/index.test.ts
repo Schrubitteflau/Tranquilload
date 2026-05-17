@@ -1,10 +1,15 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Cause, Effect, Exit, Option } from "effect"
+import { afterEach, vi } from "vitest"
 import { AbortError, CompleteUploadError, InitiateUploadError } from "../errors/upload-error.js"
 import { compress } from "../pipeline/compress.js"
 import { compose, type Transform } from "../pipeline/middleware.js"
-import { uploadMultipart } from "./index.js"
+import { uploadMultipart, type ResumeState } from "./index.js"
 import { uploadMultipartEffect } from "./upload-stream.js"
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 // Helper: create a ReadableStream from a Uint8Array
 const fromBytes = (bytes: Uint8Array): ReadableStream<Uint8Array> =>
@@ -280,4 +285,162 @@ describe("uploadMultipart — Dual API entry point", () => {
       expect(resolvedId).toBe("")
     })
   )
+})
+
+describe("uploadMultipart — resumeState surface", () => {
+  it.effect("resumeState resolves with correct shape on fresh init (no digest)", () =>
+    Effect.gen(function* () {
+      const { result, resumeState } = uploadMultipart({
+        stream: fromBytes(new Uint8Array(10).fill(1)),
+        chunkSize: 10,
+        initiate: () => ({ uploadId: "fresh-up-1" }),
+        pipelineIdentity: "ident-1",
+        uploadPart: () => "etag-1",
+        completeUpload: () => {},
+      })
+
+      yield* Effect.promise(() => result)
+      const state = yield* Effect.promise(() => resumeState)
+      expect(state).toEqual({
+        version: 1,
+        uploadId: "fresh-up-1",
+        chunkSize: 10,
+        pipelineIdentity: "ident-1",
+        contentDigestCaptured: false,
+      })
+    })
+  )
+
+  it.effect("resumeState includes contentDigest when getContentDigest is provided (fresh init)", () =>
+    Effect.gen(function* () {
+      const { result, resumeState } = uploadMultipart({
+        stream: fromBytes(new Uint8Array(10).fill(1)),
+        chunkSize: 10,
+        initiate: () => ({ uploadId: "fresh-up-2" }),
+        getContentDigest: () => "digest-xyz",
+        uploadPart: () => "etag-1",
+        completeUpload: () => {},
+      })
+
+      yield* Effect.promise(() => result)
+      const state = yield* Effect.promise(() => resumeState)
+      expect(state).toMatchObject({
+        version: 1,
+        uploadId: "fresh-up-2",
+        contentDigest: "digest-xyz",
+        contentDigestCaptured: true,
+      })
+    })
+  )
+
+  it.effect("resumeState resolves with the passed resumeFrom shape on resume", () =>
+    Effect.gen(function* () {
+      const passed: ResumeState = {
+        version: 1,
+        uploadId: "stored-up-1",
+        chunkSize: 10,
+        contentDigestCaptured: false,
+      }
+      const { result, resumeState, uploadId } = uploadMultipart({
+        stream: fromBytes(new Uint8Array(10).fill(1)),
+        chunkSize: 10,
+        uploadPart: () => "etag-1",
+        completeUpload: () => {},
+        resumeFrom: passed,
+      })
+
+      // uploadId resolves synchronously (AC22) — no need to await `result`
+      const id = yield* Effect.promise(() => uploadId)
+      expect(id).toBe("stored-up-1")
+
+      yield* Effect.promise(() => result)
+      const state = yield* Effect.promise(() => resumeState)
+      expect(state).toBe(passed)
+    })
+  )
+})
+
+describe("uploadMultipart — legacy-pattern warn", () => {
+  it("warns once when initiate + reconcile + no resumeFrom (AC16)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+
+    const { result } = uploadMultipart({
+      stream: fromBytes(new Uint8Array(10).fill(1)),
+      chunkSize: 10,
+      initiate: () => ({ uploadId: "u-1" }),
+      reconcileCompletedParts: () => [{ partNumber: 1, etag: "etag-1" }],
+      uploadPart: () => "should-not-be-called",
+      completeUpload: () => {},
+    })
+    await result
+
+    const legacyWarns = warnSpy.mock.calls.filter((c) =>
+      typeof c[0] === "string" && c[0].startsWith("Tranquilload: detected legacy resume pattern")
+    )
+    expect(legacyWarns).toHaveLength(1)
+  })
+
+  it("does NOT warn when resumeFrom is provided alongside initiate + reconcile (AC17)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+
+    const { result } = uploadMultipart({
+      stream: fromBytes(new Uint8Array(10).fill(1)),
+      chunkSize: 10,
+      initiate: () => ({ uploadId: "ignored" }),
+      reconcileCompletedParts: () => [{ partNumber: 1, etag: "etag-1" }],
+      uploadPart: () => "should-not-be-called",
+      completeUpload: () => {},
+      resumeFrom: {
+        version: 1,
+        uploadId: "stored",
+        chunkSize: 10,
+        contentDigestCaptured: false,
+      },
+    })
+    await result
+
+    const legacyWarns = warnSpy.mock.calls.filter((c) =>
+      typeof c[0] === "string" && c[0].startsWith("Tranquilload: detected legacy resume pattern")
+    )
+    expect(legacyWarns).toHaveLength(0)
+  })
+
+  it("warns even when reconcileCompletedParts returns an empty array (AC18)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+
+    const { result } = uploadMultipart({
+      stream: fromBytes(new Uint8Array(10).fill(1)),
+      chunkSize: 10,
+      initiate: () => ({ uploadId: "u-1" }),
+      reconcileCompletedParts: () => [],
+      uploadPart: () => "etag-1",
+      completeUpload: () => {},
+    })
+    await result
+
+    const legacyWarns = warnSpy.mock.calls.filter((c) =>
+      typeof c[0] === "string" && c[0].startsWith("Tranquilload: detected legacy resume pattern")
+    )
+    expect(legacyWarns).toHaveLength(1)
+  })
+
+  it("warns when pipeline is set without pipelineIdentity (AC24)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+
+    const noopTransform: Transform = (stream) => stream
+
+    const { result } = uploadMultipart({
+      stream: fromBytes(new Uint8Array(10).fill(1)),
+      chunkSize: 10,
+      pipeline: noopTransform,
+      uploadPart: () => "etag-1",
+      completeUpload: () => {},
+    })
+    await result
+
+    const identityWarns = warnSpy.mock.calls.filter((c) =>
+      typeof c[0] === "string" && c[0].includes("pipeline is set but pipelineIdentity is not")
+    )
+    expect(identityWarns).toHaveLength(1)
+  })
 })

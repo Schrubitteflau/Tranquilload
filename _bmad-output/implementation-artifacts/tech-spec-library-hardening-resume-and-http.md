@@ -3,8 +3,8 @@ title: 'Library Hardening — Resume Safety + HTTP Streaming Strategy (v2)'
 slug: 'library-hardening-resume-and-http'
 created: '2026-05-17'
 revised: '2026-05-17 (post second adversarial review — auto-re-init scope cut)'
-status: 'ready-for-dev'
-stepsCompleted: [1, 2, 3, 4]
+status: 'Implementation Complete'
+stepsCompleted: [1, 2, 3, 4, 5]
 tech_stack:
   - typescript
   - effect
@@ -171,22 +171,22 @@ Ordered by dependency: types → adapter (independent) → multipart core → pu
 
 #### Phase 1 — Types & Errors
 
-- [ ] **Task 1.1**: Add `ResumeMismatchError` to the UploadError union
+- [x] **Task 1.1**: Add `ResumeMismatchError` to the UploadError union
   - File: `packages/tranquilload-core/src/errors/upload-error.ts`
   - Action: New class extending `Error`. Constructor: `constructor(readonly reason: "version_mismatch" | "chunksize_mismatch" | "pipeline_mismatch" | "content_mismatch", readonly cause?: unknown)`. `readonly _tag = "ResumeMismatchError" as const`. Message: `\`Resume state mismatch: ${reason}\``. `this.name = "ResumeMismatchError"`. Add to `UploadError` union.
   - Notes: Single class with `reason` discriminant is a conscious exception to the per-class-per-tag pattern — ResumeMismatch is one kind of error (pre-flight validation refusal), the `reason` is its specific cause. JSDoc must explain this. Per-reason dispatch via `Match.value(err.reason)`.
 
-- [ ] **Task 1.2**: Export new error + fix pre-existing missing `CircuitOpenError` export
+- [x] **Task 1.2**: Export new error + fix pre-existing missing `CircuitOpenError` export
   - File: `packages/tranquilload-core/src/errors/index.ts`
   - Action: Re-export `ResumeMismatchError` and `CircuitOpenError` (was missing — pre-existing bug).
   - Notes: Changeset entry must call out the `CircuitOpenError` export as a previously-broken-now-fixed item to avoid misleading the changelog.
 
-- [ ] **Task 1.3**: Update exhaustive-switch test for new variant
+- [x] **Task 1.3**: Update exhaustive-switch test for new variant
   - File: `packages/tranquilload-core/src/errors/upload-error.test.ts`
   - Action: Add `import { ResumeMismatchError }`. Add case: `case "ResumeMismatchError": return "resumeMismatch"`. Add assertion: `expect(check(new ResumeMismatchError("chunksize_mismatch"))).toBe("resumeMismatch")`. Add a `describe("ResumeMismatchError", ...)` block covering `instanceof Error`, `_tag`, `message`, `name`, `reason`, and optional `cause` preservation.
   - Notes: TS compile fail if the new variant is missed in the switch.
 
-- [ ] **Task 1.4**: Add optional `contentDigest` field to `UploadInitiated` event [H2]
+- [x] **Task 1.4**: Add optional `contentDigest` field to `UploadInitiated` event [H2]
   - File: `packages/tranquilload-core/src/progress/upload-event.ts`
   - Action: Extend the `UploadInitiated` interface:
     ```ts
@@ -201,7 +201,7 @@ Ordered by dependency: types → adapter (independent) → multipart core → pu
 
 #### Phase 2 — `simpleHttpUpload` adapter (independent of multipart)
 
-- [ ] **Task 2.1**: Add `bufferMode?` option + `duplex: 'half'` in stream path
+- [x] **Task 2.1**: Add `bufferMode?` option + `duplex: 'half'` in stream path
   - File: `packages/tranquilload-adapters/src/protocols/simple-http-upload.ts`
   - Action:
     1. Extend `SimpleHttpUploadOptions`: add `readonly bufferMode?: boolean` (default `false`).
@@ -214,13 +214,13 @@ Ordered by dependency: types → adapter (independent) → multipart core → pu
     - Per F12 / G2: `Response#blob()` ignores AbortSignal; the manual reader loop with per-iteration `signal.aborted` checks is the correct approach.
     - Per F13 (acknowledged risk): source-read and network errors both wrap as `CompleteUploadError`. Telemetry consumers distinguish via `cause` inspection.
 
-- [ ] **Task 2.2**: Add JSDoc warnings
+- [x] **Task 2.2**: Add JSDoc warnings
   - File: `packages/tranquilload-adapters/src/protocols/simple-http-upload.ts`
   - Action: Doc comments:
     - `bufferMode`: "When true, buffers the entire source stream into a Blob before PUT. **Memory usage equals the source size — DO NOT enable for files larger than available memory.** Use only when streaming PUT isn't supported (HTTP/1.x, environments where `duplex: 'half'` is unavailable). Default: `false`."
     - Top-of-interface: "Streaming PUT requires HTTP/2 and `duplex: 'half'`. If your target is HTTP/1.x, set `bufferMode: true`."
 
-- [ ] **Task 2.3**: Tests for both modes
+- [x] **Task 2.3**: Tests for both modes
   - File: `packages/tranquilload-adapters/src/protocols/simple-http-upload.test.ts`
   - Action: Add tests after existing block:
     1. `it("passes duplex: 'half' on streaming uploads (default)", ...)` — assert `fetchMock.mock.calls[0][1]` contains `duplex: "half"` and `body === stream`.
@@ -231,7 +231,7 @@ Ordered by dependency: types → adapter (independent) → multipart core → pu
 
 #### Phase 3 — `multipart` core — ResumeState
 
-- [ ] **Task 3.1**: Define `ResumeState` interface
+- [x] **Task 3.1**: Define `ResumeState` interface
   - File: `packages/tranquilload-core/src/multipart/upload-stream.ts`
   - Action: Above `UploadMultipartOptions`, add:
     ```ts
@@ -249,7 +249,7 @@ Ordered by dependency: types → adapter (independent) → multipart core → pu
     ```
   - Notes: `version: 1` literal — future v2 schemas widen this. Serializable to JSON without loss. The `contentDigestCaptured` flag prevents the F9 bypass.
 
-- [ ] **Task 3.2**: Extend `UploadMultipartOptions` with new fields
+- [x] **Task 3.2**: Extend `UploadMultipartOptions` with new fields
   - File: `packages/tranquilload-core/src/multipart/upload-stream.ts`
   - Action: Add three optional fields:
     ```ts
@@ -276,7 +276,7 @@ Ordered by dependency: types → adapter (independent) → multipart core → pu
     >
     > **Compression non-determinism caveat (G5):** even with identical `pipelineIdentity`, a non-deterministic pipeline (e.g. gzip with `mtime` headers, encryption with random salt) produces different bytes per run. Resume against the same uploaded parts only works if the pipeline is byte-deterministic. Verify your pipeline's determinism before relying on this.
 
-- [ ] **Task 3.3**: Validate `resumeFrom` at construction time (synchronous)
+- [x] **Task 3.3**: Validate `resumeFrom` at construction time (synchronous)
   - File: `packages/tranquilload-core/src/multipart/upload-stream.ts`
   - Action: After the existing `chunkSize > 0` guard, if `resumeFrom !== undefined`:
     - Throw `new TypeError("ResumeState.uploadId must be a non-empty string")` if `resumeFrom.uploadId === ""`. [F24]
@@ -286,7 +286,7 @@ Ordered by dependency: types → adapter (independent) → multipart core → pu
     - Throw `new ResumeMismatchError("content_mismatch")` if `resumeFrom.contentDigestCaptured === true && resumeFrom.contentDigest === undefined`. [F9 — dropped-digest bypass detection]
   - Notes: All synchronous throws at function entry, like the chunkSize guard. **Content-digest *value* mismatch** is validated inside the Effect during initiate (Task 3.4).
 
-- [ ] **Task 3.4**: Implement resume vs fresh-init branching *(scope: only fresh-init or use-stored-state; auto-re-init dropped)*
+- [x] **Task 3.4**: Implement resume vs fresh-init branching *(scope: only fresh-init or use-stored-state; auto-re-init dropped)*
   - File: `packages/tranquilload-core/src/multipart/upload-stream.ts`
   - Action: Replace the existing `initiateStream` definition:
     1. **New state Ref:** `const refDigest = yield* Ref.make<Option.Option<string>>(Option.none())`.
@@ -311,7 +311,7 @@ Ordered by dependency: types → adapter (independent) → multipart core → pu
     - **No `refReinitCount`, no `UploadIdGoneError`, no `UploadReinitiated` event.** All of that is deferred.
     - If the stored `uploadId` is dead (404 on first sign request), the user sees `PartUploadError(1, 1, <404>)` — same as today. No regression, no advance.
 
-- [ ] **Task 3.5**: Add tests for ResumeState validation
+- [x] **Task 3.5**: Add tests for ResumeState validation
   - File: `packages/tranquilload-core/src/multipart/upload-stream.test.ts`
   - Action: Add `describe("ResumeState validation", ...)` block:
     1. Throws `TypeError` matching `/non-empty string/` when `resumeFrom.uploadId === ""`.
@@ -326,7 +326,7 @@ Ordered by dependency: types → adapter (independent) → multipart core → pu
 
 #### Phase 4 — `multipart` public wrapper
 
-- [ ] **Task 4.1**: Surface `resumeState` Promise + fix `uploadId` Promise on resume [H1, H2, H4]
+- [x] **Task 4.1**: Surface `resumeState` Promise + fix `uploadId` Promise on resume [H1, H2, H4]
   - File: `packages/tranquilload-core/src/multipart/index.ts`
   - Action:
     1. **Fix existing `uploadId: Promise<string>` regression [H1]:** today's wrapper resolves `uploadId` on `UploadInitiated` event. On resume (per AC11), no such event is emitted → `uploadId` would hang. **On the resume branch, resolve `uploadId` *synchronously* with `resumeFrom.uploadId` before the stream runs.** On the fresh-init branch, the existing `Stream.tap` for `UploadInitiated` continues to fire as today.
@@ -336,7 +336,7 @@ Ordered by dependency: types → adapter (independent) → multipart core → pu
        - **Error path:** if `setupStream` fails before the first `UploadInitiated` (fresh init) OR if synchronous validation throws (resume), reject `resumeState` Promise with the same error. Note: synchronous throws will propagate from the `uploadMultipart(...)` call itself, not as Promise rejections.
   - Notes: This task depends on Task 1.4 (`contentDigest` field on `UploadInitiated`) and Task 3.1 (`ResumeState` type). The H2 problem (refDigest inaccessible from wrapper) is eliminated because the digest is now carried on the event.
 
-- [ ] **Task 4.2**: Legacy-pattern detection + console.warn *(per G3: unconditional)*
+- [x] **Task 4.2**: Legacy-pattern detection + console.warn *(per G3: unconditional)*
   - File: `packages/tranquilload-core/src/multipart/index.ts`
   - Action: At the **top** of `uploadMultipart`, detect: `options.initiate !== undefined && options.reconcileCompletedParts !== undefined && options.resumeFrom === undefined`. If detected, immediately call:
     ```js
@@ -353,18 +353,18 @@ Ordered by dependency: types → adapter (independent) → multipart core → pu
     - Users who want it silenced can override their own `console.warn`. The lib does not provide an opt-out mechanism (kept simple).
     - **Additional warn per H9:** also fire `console.warn` (separate message) when `options.pipeline !== undefined && options.pipelineIdentity === undefined`. Message: `"Tranquilload: pipeline is set but pipelineIdentity is not. Without an identity, the resume validation cannot detect a pipeline mismatch across sessions. See README → Resume Safety."`
 
-- [ ] **Task 4.3**: Export `ResumeState` type
+- [x] **Task 4.3**: Export `ResumeState` type
   - File: `packages/tranquilload-core/src/multipart/index.ts`
   - Action: Re-export `ResumeState` from `upload-stream.ts` alongside `CompletedPart` and `UploadMultipartOptions`.
 
-- [ ] **Task 4.4**: Pre-existing tests audit + migration
+- [x] **Task 4.4**: Pre-existing tests audit + migration
   - File: `packages/tranquilload-core/src/multipart/index.test.ts`, `upload-stream.test.ts`
   - Action: Grep for `initiate: () => ({ uploadId:` and `initiate: async () => ({ uploadId:` patterns. Each match is a test using the legacy resume pattern. For each:
     1. If the test's intent was "fresh init that returns a stored id": migrate to `resumeFrom: { version: 1, uploadId: "stored-id", chunkSize: <n>, contentDigestCaptured: false }`. Remove the `initiate` callback.
     2. If the test's intent was "fresh init that returns a fresh id": rename the variable in the test to be unambiguous; no semantic change needed.
   - Notes: This is the concrete enumeration F3 demanded. Audit happens here; the count of migrated tests is reported in the PR description.
 
-- [ ] **Task 4.5**: Tests for public wrapper changes
+- [x] **Task 4.5**: Tests for public wrapper changes
   - File: `packages/tranquilload-core/src/multipart/index.test.ts`
   - Action:
     1. `resumeState` Promise resolves with correct shape on fresh init.
@@ -376,7 +376,7 @@ Ordered by dependency: types → adapter (independent) → multipart core → pu
 
 #### Phase 5 — Documentation
 
-- [ ] **Task 5.1**: Create MIGRATION.md
+- [x] **Task 5.1**: Create MIGRATION.md
   - File: `MIGRATION.md` (repo root, new file)
   - Sections:
     - "v0.1.x → v0.2.x"
@@ -390,7 +390,7 @@ Ordered by dependency: types → adapter (independent) → multipart core → pu
       - HTTP/2 requirement for default streaming; flip `bufferMode: true` for HTTP/1.x environments.
       - Memory caveat.
 
-- [ ] **Task 5.2**: Update README.md
+- [x] **Task 5.2**: Update README.md
   - File: `README.md`
   - Action:
     1. Update "Resuming an upload after a refresh" code block: show `JSON.stringify(resumeState)` → localStorage → `JSON.parse(stored) as ResumeState` → `resumeFrom: parsed`.
@@ -401,11 +401,11 @@ Ordered by dependency: types → adapter (independent) → multipart core → pu
 
 #### Phase 6 — Release artifacts
 
-- [ ] **Task 6.1**: Changeset for `@tranquilload/adapters` (patch)
+- [x] **Task 6.1**: Changeset for `@tranquilload/adapters` (patch)
   - File: `.changeset/simple-http-upload-buffer-mode.md`
   - Action: Patch bump describing `bufferMode` and `duplex: 'half'`.
 
-- [ ] **Task 6.2**: Changeset for `@tranquilload/core` (minor)
+- [x] **Task 6.2**: Changeset for `@tranquilload/core` (minor)
   - File: `.changeset/resume-state.md`
   - Action: Minor bump with bulleted summary:
     - New: `ResumeState` opaque return-type carrying versioned resume metadata.
@@ -417,61 +417,61 @@ Ordered by dependency: types → adapter (independent) → multipart core → pu
 
 #### Phase 7 — Verification
 
-- [ ] **Task 7.1**: Triptyque green
+- [x] **Task 7.1**: Triptyque green
   - Action: `pnpm turbo build && pnpm turbo test && pnpm -r typecheck`. All exit 0. The legacy-pattern tests explicitly assert console.warn fires — no unexpected console.warn elsewhere.
 
 ### Acceptance Criteria
 
 #### `simpleHttpUpload`
 
-- [ ] **AC 1**: Given `bufferMode` is unset (default), when `upload(stream)` is called, then `fetch` is invoked with `body === stream` AND `duplex === "half"` in the request options.
-- [ ] **AC 2**: Given `bufferMode: true`, when `upload(stream)` is called with a stream of N bytes, then `fetch` is invoked with `body instanceof Blob`, `body.size === N`, and no `duplex` in options.
-- [ ] **AC 3**: Given `bufferMode: true` and a stream that errors during a `reader.read()`, when `upload` is called, then the rejection is `instanceof CompleteUploadError` whose `cause` is the original stream error.
-- [ ] **AC 4**: Given `bufferMode: true` and `signal: someAbortSignal`, when the signal aborts between two `reader.read()` calls, then the returned Promise rejects with `instanceof AbortError` — NOT `CompleteUploadError`. [G2]
+- [x] **AC 1**: Given `bufferMode` is unset (default), when `upload(stream)` is called, then `fetch` is invoked with `body === stream` AND `duplex === "half"` in the request options.
+- [x] **AC 2**: Given `bufferMode: true`, when `upload(stream)` is called with a stream of N bytes, then `fetch` is invoked with `body instanceof Blob`, `body.size === N`, and no `duplex` in options.
+- [x] **AC 3**: Given `bufferMode: true` and a stream that errors during a `reader.read()`, when `upload` is called, then the rejection is `instanceof CompleteUploadError` whose `cause` is the original stream error.
+- [x] **AC 4**: Given `bufferMode: true` and `signal: someAbortSignal`, when the signal aborts between two `reader.read()` calls, then the returned Promise rejects with `instanceof AbortError` — NOT `CompleteUploadError`. [G2]
 
 #### `ResumeState` synchronous validation
 
-- [ ] **AC 5**: Given `resumeFrom.uploadId === ""`, when `uploadMultipart` is invoked, then `TypeError` is thrown matching `/non-empty string/`. [F24]
-- [ ] **AC 6**: Given `resumeFrom.version !== 1`, then `ResumeMismatchError` with `reason === "version_mismatch"` is thrown synchronously.
-- [ ] **AC 7**: Given `resumeFrom.chunkSize !== options.chunkSize`, then `ResumeMismatchError` with `reason === "chunksize_mismatch"` is thrown synchronously.
-- [ ] **AC 8**: Given `resumeFrom.pipelineIdentity !== options.pipelineIdentity`, then `ResumeMismatchError` with `reason === "pipeline_mismatch"` is thrown synchronously.
-- [ ] **AC 9**: Given `resumeFrom.contentDigestCaptured === true && resumeFrom.contentDigest === undefined`, then `ResumeMismatchError` with `reason === "content_mismatch"` is thrown synchronously. [F9]
+- [x] **AC 5**: Given `resumeFrom.uploadId === ""`, when `uploadMultipart` is invoked, then `TypeError` is thrown matching `/non-empty string/`. [F24]
+- [x] **AC 6**: Given `resumeFrom.version !== 1`, then `ResumeMismatchError` with `reason === "version_mismatch"` is thrown synchronously.
+- [x] **AC 7**: Given `resumeFrom.chunkSize !== options.chunkSize`, then `ResumeMismatchError` with `reason === "chunksize_mismatch"` is thrown synchronously.
+- [x] **AC 8**: Given `resumeFrom.pipelineIdentity !== options.pipelineIdentity`, then `ResumeMismatchError` with `reason === "pipeline_mismatch"` is thrown synchronously.
+- [x] **AC 9**: Given `resumeFrom.contentDigestCaptured === true && resumeFrom.contentDigest === undefined`, then `ResumeMismatchError` with `reason === "content_mismatch"` is thrown synchronously. [F9]
 
 #### `ResumeState` runtime validation
 
-- [ ] **AC 10**: Given a `resumeFrom` with `contentDigest === "abc"` and a `getContentDigest` that returns `"xyz"`, when the upload stream is consumed, then it fails with `ResumeMismatchError{reason: "content_mismatch"}` before any chunk is PUT.
+- [x] **AC 10**: Given a `resumeFrom` with `contentDigest === "abc"` and a `getContentDigest` that returns `"xyz"`, when the upload stream is consumed, then it fails with `ResumeMismatchError{reason: "content_mismatch"}` before any chunk is PUT.
 
 #### Resume happy path
 
-- [ ] **AC 11**: Given a valid `resumeFrom` (all fields match), when `uploadMultipart` is invoked, then NO `UploadInitiated` event is emitted, `initiate` is NOT called, `reconcileCompletedParts` is called once, and only un-reconciled parts get PUT requests. [G1 — proves the resume path is silent]
+- [x] **AC 11**: Given a valid `resumeFrom` (all fields match), when `uploadMultipart` is invoked, then NO `UploadInitiated` event is emitted, `initiate` is NOT called, `reconcileCompletedParts` is called once, and only un-reconciled parts get PUT requests. [G1 — proves the resume path is silent]
 
 #### Fresh-init happy path
 
-- [ ] **AC 12**: Given no `resumeFrom` and `initiate` is provided, when `uploadMultipart` is invoked, then `initiate` is called once and exactly one `UploadInitiated` event is emitted as the first stream event.
+- [x] **AC 12**: Given no `resumeFrom` and `initiate` is provided, when `uploadMultipart` is invoked, then `initiate` is called once and exactly one `UploadInitiated` event is emitted as the first stream event.
 
 #### Public wrapper (`uploadMultipart`)
 
-- [ ] **AC 13**: Given a successful fresh init, when `uploadMultipart` is invoked, then `resumeState` Promise resolves with `{version: 1, uploadId, chunkSize, pipelineIdentity, contentDigest?, contentDigestCaptured}`.
-- [ ] **AC 14**: Given a successful resume (with `resumeFrom`), when `uploadMultipart` is invoked, then `resumeState` Promise resolves with the same shape as the passed `resumeFrom` (lib has no new state to add).
-- [ ] **AC 15**: Given an error during `setupStream` execution (fresh init: `initiate` callback fails; resume: `getContentDigest` fails), when `uploadMultipart` is invoked, then `resumeState` rejects with the same error as `result`. (Synchronous throws from validation propagate from the call itself.) [H6]
-- [ ] **AC 22**: Given a resume run (`resumeFrom` set), when `uploadMultipart` is invoked, then the `uploadId: Promise<string>` resolves **synchronously** with `resumeFrom.uploadId` (does NOT wait for an `UploadInitiated` event that will never come). [H1]
-- [ ] **AC 23**: Given a fresh-init run with `getContentDigest` provided, when the `UploadInitiated` event is emitted, then `event.contentDigest` equals the value returned by `getContentDigest()`. [H2]
-- [ ] **AC 24**: Given `options.pipeline` is set but `options.pipelineIdentity` is undefined, when `uploadMultipart` is invoked, then `console.warn` is called with a message about missing pipelineIdentity (since the lack of identity disables pipeline-mismatch protection on resume). [H9]
+- [x] **AC 13**: Given a successful fresh init, when `uploadMultipart` is invoked, then `resumeState` Promise resolves with `{version: 1, uploadId, chunkSize, pipelineIdentity, contentDigest?, contentDigestCaptured}`.
+- [x] **AC 14**: Given a successful resume (with `resumeFrom`), when `uploadMultipart` is invoked, then `resumeState` Promise resolves with the same shape as the passed `resumeFrom` (lib has no new state to add).
+- [x] **AC 15**: Given an error during `setupStream` execution (fresh init: `initiate` callback fails; resume: `getContentDigest` fails), when `uploadMultipart` is invoked, then `resumeState` rejects with the same error as `result`. (Synchronous throws from validation propagate from the call itself.) [H6]
+- [x] **AC 22**: Given a resume run (`resumeFrom` set), when `uploadMultipart` is invoked, then the `uploadId: Promise<string>` resolves **synchronously** with `resumeFrom.uploadId` (does NOT wait for an `UploadInitiated` event that will never come). [H1]
+- [x] **AC 23**: Given a fresh-init run with `getContentDigest` provided, when the `UploadInitiated` event is emitted, then `event.contentDigest` equals the value returned by `getContentDigest()`. [H2]
+- [x] **AC 24**: Given `options.pipeline` is set but `options.pipelineIdentity` is undefined, when `uploadMultipart` is invoked, then `console.warn` is called with a message about missing pipelineIdentity (since the lack of identity disables pipeline-mismatch protection on resume). [H9]
 
 #### Legacy-pattern detection
 
-- [ ] **AC 16**: Given the legacy pattern (`initiate + reconcile + no resumeFrom`), when `uploadMultipart` is invoked, then `console.warn` is called exactly once with a message starting with `"Tranquilload: detected legacy resume pattern"`.
-- [ ] **AC 17**: Given the new pattern (`resumeFrom` set alongside `initiate + reconcile`), when `uploadMultipart` is invoked, then `console.warn` is NOT called.
-- [ ] **AC 18**: Given `reconcileCompletedParts` is provided but returns an empty array, when `uploadMultipart` is invoked, `console.warn` IS called (unconditional warn per G3 — first-time uploaders need the message too).
+- [x] **AC 16**: Given the legacy pattern (`initiate + reconcile + no resumeFrom`), when `uploadMultipart` is invoked, then `console.warn` is called exactly once with a message starting with `"Tranquilload: detected legacy resume pattern"`.
+- [x] **AC 17**: Given the new pattern (`resumeFrom` set alongside `initiate + reconcile`), when `uploadMultipart` is invoked, then `console.warn` is NOT called.
+- [x] **AC 18**: Given `reconcileCompletedParts` is provided but returns an empty array, when `uploadMultipart` is invoked, `console.warn` IS called (unconditional warn per G3 — first-time uploaders need the message too).
 
 #### Backward compatibility
 
-- [ ] **AC 19**: Given the existing test suite, when all Tasks 1-6 are applied, then **all pre-existing tests pass EXCEPT** those that have been explicitly migrated in Task 4.4 (which were exercising the legacy pattern). The PR description must enumerate the migrated tests.
-- [ ] **AC 20**: Given `import { CircuitOpenError } from "@tranquilload/core/errors"`, when the code is loaded, `CircuitOpenError` resolves to the class constructor (previously `undefined`).
+- [x] **AC 19**: Given the existing test suite, when all Tasks 1-6 are applied, then **all pre-existing tests pass EXCEPT** those that have been explicitly migrated in Task 4.4 (which were exercising the legacy pattern). The PR description must enumerate the migrated tests.
+- [x] **AC 20**: Given `import { CircuitOpenError } from "@tranquilload/core/errors"`, when the code is loaded, `CircuitOpenError` resolves to the class constructor (previously `undefined`).
 
 #### Verification
 
-- [ ] **AC 21**: When `pnpm turbo build && pnpm turbo test && pnpm -r typecheck` is executed at the repo root, all three exit 0 with no unexpected warnings.
+- [x] **AC 21**: When `pnpm turbo build && pnpm turbo test && pnpm -r typecheck` is executed at the repo root, all three exit 0 with no unexpected warnings.
 
 ## Additional Context
 

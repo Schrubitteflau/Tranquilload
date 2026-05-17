@@ -8,6 +8,7 @@ import {
   CompleteUploadError,
   AbortError,
   CircuitOpenError,
+  ResumeMismatchError,
   type UploadError,
 } from './upload-error.js'
 
@@ -188,6 +189,38 @@ describe("AbortError", () => {
   })
 })
 
+describe("ResumeMismatchError", () => {
+  it("is instanceof Error", () => {
+    const err = new ResumeMismatchError("version_mismatch")
+    expect(err instanceof Error).toBe(true)
+  })
+  it("has correct _tag", () => {
+    const err = new ResumeMismatchError("chunksize_mismatch")
+    expect(err._tag).toBe("ResumeMismatchError")
+  })
+  it("has human-readable message including reason", () => {
+    const err = new ResumeMismatchError("pipeline_mismatch")
+    expect(err.message).toBe("Resume state mismatch: pipeline_mismatch")
+  })
+  it("name equals _tag for logger compat", () => {
+    const err = new ResumeMismatchError("content_mismatch")
+    expect(err.name).toBe("ResumeMismatchError")
+  })
+  it("preserves the reason discriminant", () => {
+    const err = new ResumeMismatchError("content_mismatch")
+    expect(err.reason).toBe("content_mismatch")
+  })
+  it("preserves optional cause", () => {
+    const cause = new Error("digest function threw")
+    const err = new ResumeMismatchError("content_mismatch", cause)
+    expect(err.cause).toBe(cause)
+  })
+  it("cause is undefined when omitted", () => {
+    const err = new ResumeMismatchError("version_mismatch")
+    expect(err.cause).toBeUndefined()
+  })
+})
+
 it("UploadError union is exhaustive", () => {
   const check = (err: UploadError): string => {
     switch (err._tag) {
@@ -199,6 +232,7 @@ it("UploadError union is exhaustive", () => {
       case "CompleteUploadError": return "complete"
       case "AbortError": return "abort"
       case "CircuitOpenError": return "circuitOpen"
+      case "ResumeMismatchError": return "resumeMismatch"
       default: {
         // If a new variant is added to UploadError without a matching case above,
         // TypeScript will error here: "Type 'NewVariant' is not assignable to type 'never'"
@@ -215,4 +249,5 @@ it("UploadError union is exhaustive", () => {
   expect(check(new PartUploadError(1, 1, null))).toBe("part")
   expect(check(new MaxRetriesExceededError(1, 1, null))).toBe("maxRetries")
   expect(check(new CircuitOpenError(3))).toBe("circuitOpen")
+  expect(check(new ResumeMismatchError("chunksize_mismatch"))).toBe("resumeMismatch")
 })

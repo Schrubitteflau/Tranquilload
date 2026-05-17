@@ -1,6 +1,6 @@
 import { Cause, Effect, Exit, Option, Ref, Schedule, Stream } from "effect"
 import type { UploadError } from "../errors/upload-error.js"
-import { CircuitOpenError, CompleteUploadError, InitiateUploadError, MaxRetriesExceededError, PartUploadError, ReconcileError } from "../errors/upload-error.js"
+import { CircuitOpenError, CompleteUploadError, InitiateUploadError, MaxRetriesExceededError, PartUploadError, ReconcileError, ResumeMismatchError } from "../errors/upload-error.js"
 import type { CircuitOpen, PartCompleted, ProgressTick, UploadCompleted, UploadEvent, UploadInitiated } from "../progress/upload-event.js"
 import { LoggerService } from "../services/logger-service.js"
 import { fromAbortSignal } from "../utils/abort-interop.js"
@@ -11,6 +11,35 @@ import { chunkStream } from "./chunk-stream.js"
 export interface CompletedPart {
   readonly partNumber: number
   readonly etag: string
+}
+
+/**
+ * Opaque resume metadata returned by `uploadMultipart` and persisted by the
+ * caller (typically `JSON.stringify` → localStorage). Pass it back as
+ * `resumeFrom` on the next session.
+ *
+ * The lib validates `version`, `chunkSize`, `pipelineIdentity`, and the content
+ * digest before any byte is uploaded. A mismatch fails the upload with a typed
+ * `ResumeMismatchError` — preventing the silent-corruption classes documented
+ * in the v0.2.x release notes.
+ *
+ * **Schema versioning.** The `version: 1` literal is a tripwire for schema
+ * evolution: future v2 schemas widen this union, and a persisted v1 state
+ * passed to a future v2 lib will fail with `ResumeMismatchError("version_mismatch")`
+ * rather than silently misinterpreting old fields.
+ */
+export interface ResumeState {
+  readonly version: 1
+  readonly uploadId: string
+  readonly chunkSize: number
+  readonly pipelineIdentity?: string
+  readonly contentDigest?: string
+  /**
+   * True if the original session captured a digest. Detects persistence layers
+   * that drop the `contentDigest` field (which would otherwise silently bypass
+   * content-mismatch validation).
+   */
+  readonly contentDigestCaptured: boolean
 }
 
 export interface UploadMultipartOptions {
@@ -32,6 +61,59 @@ export interface UploadMultipartOptions {
     | ReadonlyArray<CompletedPart>
     | Promise<ReadonlyArray<CompletedPart>>
     | Effect.Effect<ReadonlyArray<CompletedPart>, UploadError>
+  /**
+   * Resume metadata persisted from a previous session. When set, the lib skips
+   * the `initiate` callback (the `uploadId` is read from `resumeFrom`) and
+   * validates `version`, `chunkSize`, `pipelineIdentity`, and `contentDigest`
+   * before any byte is uploaded. A mismatch fails the upload with
+   * `ResumeMismatchError`.
+   *
+   * Synchronous (pre-flight) validation happens at `uploadMultipart()` call
+   * time — `TypeError` for an empty `uploadId`, `ResumeMismatchError` for the
+   * rest. The asynchronous content-digest *value* match is verified inside
+   * the Effect once the upload stream is consumed.
+   */
+  readonly resumeFrom?: ResumeState
+  /**
+   * Called once on fresh initiate to capture a digest of the source content.
+   * On a subsequent resume session, called again and compared to
+   * `resumeFrom.contentDigest`; a mismatch fails the upload with
+   * `ResumeMismatchError("content_mismatch")` before any byte is uploaded.
+   *
+   * **MUST be lightweight and stable across sessions.** Suggested patterns:
+   * - Browser `File`: `` `${name}|${size}|${lastModified}` ``
+   * - Node `Readable` from a file: `` `${path}|${stat.size}|${stat.mtimeMs}` ``
+   * - Synchronous strings; avoid full-file crypto hashes on the synchronous path.
+   *
+   * **MUST NOT consume bytes from the source stream** (passed in
+   * `options.stream`). The lib calls `getContentDigest` before any chunk is
+   * pulled from the source; consuming from the source here will produce a
+   * zero-byte upload because no bytes remain for `chunkStream`.
+   */
+  readonly getContentDigest?: () =>
+    | string
+    | Promise<string>
+    | Effect.Effect<string, UploadError>
+  /**
+   * An opaque, stable identifier for the upstream pipeline composition.
+   * Captured in `ResumeState` and validated strict-equality on resume.
+   * **You own keeping this stable** — if you configure `compress("deflate-raw")`
+   * in session A, you must pass the same `pipelineIdentity` on resume.
+   *
+   * **Strict equality limitation:** a pipeline that is logically identical but
+   * produces different identifier strings (e.g. tag bumps, version-stamped
+   * strings) triggers `ResumeMismatchError("pipeline_mismatch")`. Pick a stable
+   * string (e.g. `"deflate-raw-v1"`) and only change it when the pipeline's
+   * *byte-level output* changes.
+   *
+   * **Compression non-determinism caveat:** even with identical
+   * `pipelineIdentity`, a non-deterministic pipeline (e.g. gzip with `mtime`
+   * headers, encryption with random salt) produces different bytes per run.
+   * Resume against the same uploaded parts only works if the pipeline is
+   * byte-deterministic. Verify your pipeline's determinism before relying on
+   * this.
+   */
+  readonly pipelineIdentity?: string
   readonly maxConcurrency?: number
   readonly signal?: AbortSignal
   readonly retrySchedule?: Schedule.Schedule<unknown, PartUploadError>
@@ -55,6 +137,9 @@ export const uploadMultipartEffect = (
     completeUpload,
     initiate,
     reconcileCompletedParts,
+    resumeFrom,
+    getContentDigest,
+    pipelineIdentity,
     maxConcurrency = DEFAULT_MAX_CONCURRENCY,
     signal,
     retrySchedule = DEFAULT_RETRY_SCHEDULE,
@@ -66,6 +151,29 @@ export const uploadMultipartEffect = (
     )
   }
 
+  if (resumeFrom !== undefined) {
+    if (typeof resumeFrom.uploadId !== "string" || resumeFrom.uploadId === "") {
+      throw new TypeError(
+        "uploadMultipart: ResumeState.uploadId must be a non-empty string"
+      )
+    }
+    if (resumeFrom.version !== 1) {
+      throw new ResumeMismatchError("version_mismatch")
+    }
+    if (resumeFrom.chunkSize !== chunkSize) {
+      throw new ResumeMismatchError("chunksize_mismatch")
+    }
+    if (resumeFrom.pipelineIdentity !== pipelineIdentity) {
+      throw new ResumeMismatchError("pipeline_mismatch")
+    }
+    if (
+      resumeFrom.contentDigestCaptured === true &&
+      resumeFrom.contentDigest === undefined
+    ) {
+      throw new ResumeMismatchError("content_mismatch")
+    }
+  }
+
   return Stream.unwrap(
     Effect.gen(function* () {
       const logger = yield* LoggerService
@@ -73,6 +181,7 @@ export const uploadMultipartEffect = (
       const refParts = yield* Ref.make<CompletedPart[]>([])
       const refBytesUploaded = yield* Ref.make(0)
       const refUploadId = yield* Ref.make("")
+      const refDigest = yield* Ref.make<Option.Option<string>>(Option.none())
       const breaker = options.circuitBreaker
         ? yield* makeCircuitBreaker(options.circuitBreaker)
         : null
@@ -85,22 +194,51 @@ export const uploadMultipartEffect = (
           )
         : new Map()
 
-      const initiateStream: Stream.Stream<UploadEvent, UploadError, never> = initiate
-        ? Stream.fromEffect(
-            normalizeCallback(initiate).pipe(
-              Effect.mapError((cause): UploadError => new InitiateUploadError(cause)),
-              Effect.flatMap(({ uploadId }) =>
-                Ref.set(refUploadId, uploadId).pipe(
-                  Effect.as({
-                    _tag: "UploadInitiated" as const,
-                    uploadId,
-                    timestamp: Date.now(),
-                  } satisfies UploadInitiated)
-                )
-              )
+      const runFreshInit: Effect.Effect<UploadInitiated, UploadError> = Effect.gen(
+        function* () {
+          const { uploadId } = yield* normalizeCallback(initiate!).pipe(
+            Effect.mapError((cause): UploadError => new InitiateUploadError(cause))
+          )
+          yield* Ref.set(refUploadId, uploadId)
+          if (getContentDigest !== undefined) {
+            const digest = yield* normalizeCallback(getContentDigest).pipe(
+              Effect.mapError((cause): UploadError => new InitiateUploadError(cause))
+            )
+            yield* Ref.set(refDigest, Option.some(digest))
+          }
+          const capturedDigest = yield* Ref.get(refDigest)
+          return {
+            _tag: "UploadInitiated" as const,
+            uploadId,
+            contentDigest: Option.getOrUndefined(capturedDigest),
+            timestamp: Date.now(),
+          } satisfies UploadInitiated
+        }
+      )
+
+      const runResumeSetup: Effect.Effect<void, UploadError> = Effect.gen(function* () {
+        // `resumeFrom` is non-undefined here (checked by setupStream selector below).
+        const rf = resumeFrom!
+        if (rf.contentDigest !== undefined && getContentDigest !== undefined) {
+          const digest = yield* normalizeCallback(getContentDigest).pipe(
+            Effect.mapError(
+              (cause): UploadError => new ResumeMismatchError("content_mismatch", cause)
             )
           )
-        : Stream.empty
+          if (digest !== rf.contentDigest) {
+            return yield* Effect.fail(new ResumeMismatchError("content_mismatch"))
+          }
+          yield* Ref.set(refDigest, Option.some(digest))
+        }
+        yield* Ref.set(refUploadId, rf.uploadId)
+      })
+
+      const setupStream: Stream.Stream<UploadEvent, UploadError, never> =
+        resumeFrom !== undefined
+          ? Stream.fromEffect(runResumeSetup).pipe(Stream.drain)
+          : initiate !== undefined
+            ? Stream.fromEffect(runFreshInit)
+            : Stream.empty
 
       const makeUploadOne = (
         partNumber: number,
@@ -246,7 +384,7 @@ export const uploadMultipartEffect = (
         }
       )
 
-      return Stream.concat(initiateStream, partsStream.pipe(Stream.concat(Stream.fromEffect(finalEffect))))
+      return Stream.concat(setupStream, partsStream.pipe(Stream.concat(Stream.fromEffect(finalEffect))))
     })
   )
 }

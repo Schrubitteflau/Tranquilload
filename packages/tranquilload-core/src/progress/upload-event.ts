@@ -3,6 +3,12 @@ import { Option } from "effect"
 export interface UploadInitiated {
   readonly _tag: "UploadInitiated"
   readonly uploadId: string
+  /**
+   * Populated when `getContentDigest` was provided on the fresh-init path.
+   * Carried on the event so the public wrapper can build a complete `ResumeState`
+   * without needing access to the internal digest Ref.
+   */
+  readonly contentDigest?: string
   readonly timestamp: number
 }
 
