@@ -333,4 +333,37 @@ describe("uploadMultipartEffect with circuitBreaker", () => {
       expect(err).toBeInstanceOf(CircuitOpenError)
     })
   )
+
+  describe("chunkSize validation", () => {
+    const baseOptions = {
+      stream: fromBytes(new Uint8Array(10)),
+      uploadPart: () => "etag",
+      completeUpload: () => {},
+    } as const
+
+    it("throws TypeError when chunkSize is 0", () => {
+      expect(() => uploadMultipartEffect({ ...baseOptions, chunkSize: 0 }))
+        .toThrow(TypeError)
+    })
+
+    it("throws TypeError when chunkSize is negative", () => {
+      expect(() => uploadMultipartEffect({ ...baseOptions, chunkSize: -1 }))
+        .toThrow(/positive finite number/)
+    })
+
+    it("throws TypeError when chunkSize is NaN", () => {
+      expect(() => uploadMultipartEffect({ ...baseOptions, chunkSize: NaN }))
+        .toThrow(/positive finite number/)
+    })
+
+    it("throws TypeError when chunkSize is Infinity", () => {
+      expect(() => uploadMultipartEffect({ ...baseOptions, chunkSize: Infinity }))
+        .toThrow(/positive finite number/)
+    })
+
+    it("accepts a positive integer chunkSize (control)", () => {
+      expect(() => uploadMultipartEffect({ ...baseOptions, chunkSize: 5 }))
+        .not.toThrow()
+    })
+  })
 })

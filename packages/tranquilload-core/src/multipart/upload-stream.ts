@@ -60,6 +60,12 @@ export const uploadMultipartEffect = (
     retrySchedule = DEFAULT_RETRY_SCHEDULE,
   } = options
 
+  if (!Number.isFinite(chunkSize) || chunkSize <= 0) {
+    throw new TypeError(
+      `uploadMultipart: chunkSize must be a positive finite number, got ${chunkSize}`
+    )
+  }
+
   return Stream.unwrap(
     Effect.gen(function* () {
       const logger = yield* LoggerService
