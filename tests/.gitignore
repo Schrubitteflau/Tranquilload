@@ -1,0 +1,12 @@
+# Playwright artifacts
+test-results/
+playwright-report/
+playwright/.cache/
+blob-report/
+
+# Env
+.env
+.env.local
+
+# Node
+node_modules/

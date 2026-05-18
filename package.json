@@ -5,6 +5,9 @@
   "scripts": {
     "build": "turbo build",
     "test": "turbo test",
+    "test:e2e": "pnpm --filter @tranquilload/tests test:e2e",
+    "test:e2e:chromium": "pnpm --filter @tranquilload/tests test:e2e:chromium",
+    "test:e2e:install": "pnpm --filter @tranquilload/tests test:e2e:install",
     "dev": "turbo dev",
     "typecheck": "turbo typecheck",
     "changeset": "changeset",

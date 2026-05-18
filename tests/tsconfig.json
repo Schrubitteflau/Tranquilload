@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"],
+    "rootDir": ".",
+    "baseUrl": ".",
+    "paths": {
+      "@support/*": ["support/*"]
+    }
+  },
+  "include": ["**/*.ts", "playwright.config.ts"],
+  "exclude": ["node_modules", "test-results", "playwright-report"]
+}
