@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "End-to-end and integration test harness for Tranquilload (Playwright + MinIO).",
+  "description": "End-to-end and integration test harness for Tranquilload (Playwright + MinIO + vitest DIST integrity).",
   "scripts": {
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --project=chromium-ui --project=firefox-ui --project=webkit-ui",
@@ -13,6 +13,8 @@
     "test:e2e:debug": "playwright test --debug",
     "test:e2e:report": "playwright show-report",
     "test:e2e:install": "playwright install --with-deps",
+    "test:integration": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.integration.json",
     "minio:up": "pnpm --filter @tranquilload/test-app minio:up",
     "minio:down": "pnpm --filter @tranquilload/test-app minio:down"
   },
@@ -22,6 +24,7 @@
     "@tranquilload/adapters": "workspace:*",
     "@tranquilload/core": "workspace:*",
     "@types/node": "^25.5.0",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "vitest": "^3.2.0"
   }
 }

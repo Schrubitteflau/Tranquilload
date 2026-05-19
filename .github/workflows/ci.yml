@@ -33,3 +33,31 @@ jobs:
 
       - name: Build, Test & Typecheck
         run: pnpm turbo build test typecheck
+
+  dist-integrity:
+    name: DIST integrity (Story 10.5)
+    runs-on: ubuntu-latest
+    needs: ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Cache Turborepo
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ hashFiles('turbo.json') }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
+      - name: Run DIST integrity tests
+        run: pnpm --filter @tranquilload/tests test:integration
