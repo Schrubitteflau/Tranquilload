@@ -24,16 +24,47 @@ const app = Fastify({ logger: { transport: { target: "pino-pretty" } } })
 
 await app.register(cors, { origin: true })
 
-// ---------- Chaos toggles (in-memory; reset on server restart) ----------
+// ---------- Chaos toggles (per-session; in-memory; reset on server restart) ----------
+//
+// Chaos state is keyed by the `x-test-session` header so parallel Playwright
+// workers across projects (chromium-ui / firefox-ui / webkit-ui) do not
+// trample each other's chaos config. Requests without the header fall back to
+// a shared "default" session — preserves manual UI usage and the test-app
+// running outside Playwright.
 interface Chaos {
   failSignNextN: number
   failCompleteNextN: number
   slowSignMs: number
 }
-const chaos: Chaos = { failSignNextN: 0, failCompleteNextN: 0, slowSignMs: 0 }
+const SESSION_HEADER = "x-test-session"
+const DEFAULT_SESSION = "default"
+const chaosBySession = new Map<string, Chaos>()
 
-app.get("/api/chaos", async () => chaos)
+const defaultChaos = (): Chaos => ({
+  failSignNextN: 0,
+  failCompleteNextN: 0,
+  slowSignMs: 0,
+})
+
+function getSessionId(headers: Record<string, string | string[] | undefined>): string {
+  const raw = headers[SESSION_HEADER]
+  if (typeof raw === "string" && raw.length > 0) return raw
+  if (Array.isArray(raw) && raw.length > 0 && typeof raw[0] === "string") return raw[0]
+  return DEFAULT_SESSION
+}
+
+function getChaos(sessionId: string): Chaos {
+  let c = chaosBySession.get(sessionId)
+  if (!c) {
+    c = defaultChaos()
+    chaosBySession.set(sessionId, c)
+  }
+  return c
+}
+
+app.get("/api/chaos", async (req) => getChaos(getSessionId(req.headers)))
 app.post<{ Body: Partial<Chaos> }>("/api/chaos", async (req) => {
+  const chaos = getChaos(getSessionId(req.headers))
   if (typeof req.body.failSignNextN === "number") chaos.failSignNextN = req.body.failSignNextN
   if (typeof req.body.failCompleteNextN === "number") chaos.failCompleteNextN = req.body.failCompleteNextN
   if (typeof req.body.slowSignMs === "number") chaos.slowSignMs = req.body.slowSignMs
@@ -68,6 +99,7 @@ app.post<{ Body: { key: string; uploadId: string; partNumber: number } }>(
     if (!key || !uploadId || typeof partNumber !== "number") {
       return reply.code(400).send({ error: "key, uploadId, partNumber required" })
     }
+    const chaos = getChaos(getSessionId(req.headers))
     if (chaos.slowSignMs > 0) {
       await new Promise((r) => setTimeout(r, chaos.slowSignMs))
     }
@@ -87,6 +119,7 @@ app.post<{
   if (!key || !uploadId || !Array.isArray(parts)) {
     return reply.code(400).send({ error: "key, uploadId, parts required" })
   }
+  const chaos = getChaos(getSessionId(req.headers))
   if (chaos.failCompleteNextN > 0) {
     chaos.failCompleteNextN -= 1
     return reply.code(503).send({ error: "chaos: forced complete failure" })
