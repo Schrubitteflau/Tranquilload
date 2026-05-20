@@ -29,7 +29,7 @@ Toute référence à `packages/core/` dans les specs est à lire comme `packages
 - **pnpm workspaces** — monorepo 2 packages. Référencer core depuis adapters via `workspace:^` (peerDep) et `workspace:*` (devDep)
 - **Turborepo** — pipeline `build → test` avec cache. Commande : `pnpm turbo build` / `pnpm turbo test`
 - **vitest** + **@effect/vitest** — test runner officiel Effect, évite le boilerplate `Effect.runPromise` dans les tests
-- **Changesets** — versioning indépendant des 2 packages (`@tranquilload/core` + `@tranquilload/adapters`) ; peer dep `^X.Y.Z` couvre les mises à jour minor/patch de core sans rebumper adapters
+- **Changesets** — versioning **lié** (`linked: [[core, adapters]]`) des 2 packages : ils bumpent toujours ensemble à la même version. Privés (`examples/test-app`, `tests`) ignorés via `ignore` dans `.changeset/config.json`.
 - **WHATWG Streams API** — `ReadableStream`, `TransformStream`, `WritableStream` comme primitives. Disponibles Node 18+, browser, Bun, Deno
 - **Documentation Effect locale** — repo cloné dans `effect/` à la racine. Toujours consulter `effect/docs/` en priorité avant toute recherche web
 
@@ -169,10 +169,23 @@ Toute référence à `packages/core/` dans les specs est à lire comme `packages
 - `pnpm turbo test` — tests tous packages avec cache Turborepo
 
 **Releases avec Changesets :**
-- `pnpm changeset` — décrire un changement (patch/minor/major) avant de committer
+- `pnpm changeset` — décrire un changement avant de committer. **PRE-1.0 : toujours `patch`** (voir ci-dessous).
 - `pnpm changeset version` — bumper les versions + générer CHANGELOG (dans la "Version Packages" PR)
 - `pnpm changeset publish` — publier sur npm (géré par GitHub Actions `release.yml`)
-- Versioning **indépendant** : `@tranquilload/core` et `@tranquilload/adapters` peuvent évoluer séparément ; seul un major bump de core requiert une mise à jour de la peer dep dans adapters
+- Versioning **lié** : `@tranquilload/core` et `@tranquilload/adapters` bumpent toujours ensemble (config `linked`). Les paquets privés (`examples/test-app`, `tests`) sont dans `ignore`.
+
+**⚠️ Règle pre-1.0 : tous les changesets DOIVENT être `patch`.**
+
+Mécanisme du piège (vérifié 2026-05-20) :
+1. `@tranquilload/adapters` a `@tranquilload/core: "workspace:^"` en `peerDependencies`. Au publish, pnpm le réécrit en `^0.1.0`.
+2. **Semver pre-1.0** : `^0.1.0` n'accepte que `0.1.x`, PAS `0.2.0` (chaque bump minor est une rupture).
+3. Si un changeset `minor` bumpe core 0.1.0 → 0.2.0, Changesets détecte que la peer-range publiée de adapters (`^0.1.0`) devient invalide.
+4. **Changesets auto-promote alors adapters en major (1.0.0)** pour signaler la rupture aux consommateurs. Comportement hardcodé, non configurable.
+5. La règle `linked` propage : core suit aussi à 1.0.0.
+
+→ Conséquence : en pre-1.0, un `minor` produit **toujours** un saut à 1.0.0 pour les deux packages. La seule façon de rester en 0.x est `patch` pour tout. Le sens « patch=fix, minor=feature » de semver n'a pas de poids fort en pre-1.0 ; tout bump signale juste « encore en développement ».
+
+Quand la lib est mature et qu'on veut 1.0.0 : écrire un changeset `major` (ou `minor`, qui produira le même 1.0.0 via le piège). Post-1.0, le piège disparaît parce que `^1.0.0` accepte `1.1.0`, `1.2.0`, etc.
 
 **CI/CD (GitHub Actions) :**
 - `ci.yml` : typecheck + test + build sur chaque push/PR — doit passer avant merge

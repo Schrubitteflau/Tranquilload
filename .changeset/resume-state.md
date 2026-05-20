@@ -1,5 +1,5 @@
 ---
-"@tranquilload/core": minor
+"@tranquilload/core": patch
 ---
 
 Resume safety: opaque `ResumeState`, content-digest validation, pipeline-identity check.
