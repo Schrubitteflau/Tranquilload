@@ -74,13 +74,16 @@ export function s3MultipartUpload(options: S3MultipartUploadOptions): {
     uploadId: string,
     parts: ReadonlyArray<CompletedPart>
   ): Promise<void> => {
+    // S3 requires Parts in ascending PartNumber order; the core completes
+    // parts concurrently so the array arrives unordered. Sort defensively.
+    const sorted = [...parts].sort((a, b) => a.partNumber - b.partNumber)
     try {
       await s3Client.completeMultipartUpload({
         Bucket: bucket,
         Key: key,
         UploadId: uploadId,
         MultipartUpload: {
-          Parts: parts.map((p) => ({ PartNumber: p.partNumber, ETag: p.etag })),
+          Parts: sorted.map((p) => ({ PartNumber: p.partNumber, ETag: p.etag })),
         },
       })
     } catch (cause) {

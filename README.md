@@ -245,25 +245,25 @@ import { Match } from "effect"
 
 result.catch((err: UploadError) =>
   Match.value(err).pipe(
-    Match.tag("InitiateUploadError", () => /* safe to retry from scratch */ ),
-    Match.tag("PartUploadError",     (e) => /* part ${e.partNumber} failed */ ),
-    Match.tag("MaxRetriesExceededError", () => /* give up */ ),
-    Match.tag("ReconcileError",      () => /* parts state unknown */ ),
-    Match.tag("CompleteUploadError", () => /* parts uploaded, retry .complete() or abort */ ),
-    Match.tag("PresignedUrlError",   () => /* could not obtain a signed URL */ ),
-    Match.tag("CircuitOpenError",    () => /* too many failures, pause */ ),
-    Match.tag("AbortError",          () => /* user cancelled */ ),
+    Match.tag("InitiateUploadError", () => { /* safe to retry from scratch */ }),
+    Match.tag("PartUploadError",     (e) => { /* part ${e.partNumber} failed */ }),
+    Match.tag("MaxRetriesExceededError", () => { /* give up */ }),
+    Match.tag("ReconcileError",      () => { /* parts state unknown */ }),
+    Match.tag("CompleteUploadError", () => { /* parts uploaded, retry .complete() or abort */ }),
+    Match.tag("PresignedUrlError",   () => { /* could not obtain a signed URL */ }),
+    Match.tag("CircuitOpenError",    () => { /* too many failures, pause */ }),
+    Match.tag("AbortError",          () => { /* user cancelled */ }),
     Match.tag("ResumeMismatchError", (e) =>
       Match.value(e.reason).pipe(
-        Match.when("version_mismatch",   () => /* upgrade lib or clear state */),
-        Match.when("chunksize_mismatch", () => /* chunkSize changed; start over */),
-        Match.when("pipeline_mismatch",  () => /* pipeline changed; start over */),
-        Match.when("content_mismatch",   () => /* source content differs; start over */),
+        Match.when("version_mismatch",   () => { /* upgrade lib or clear state */ }),
+        Match.when("chunksize_mismatch", () => { /* chunkSize changed; start over */ }),
+        Match.when("pipeline_mismatch",  () => { /* pipeline changed; start over */ }),
+        Match.when("content_mismatch",   () => { /* source content differs; start over */ }),
         Match.exhaustive,
-      )
+      ),
     ),
     Match.exhaustive,
-  )
+  ),
 )
 ```
 

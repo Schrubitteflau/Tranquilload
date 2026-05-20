@@ -110,6 +110,34 @@ describe("s3MultipartUpload", () => {
     })
   })
 
+  it("completeUpload sorts parts by partNumber before calling completeMultipartUpload (S3 requires ascending order)", async () => {
+    const s3Client = makeMockS3Client()
+    const adapter = s3MultipartUpload({
+      bucket: "b",
+      key: "k",
+      getPresignedUrl: vi.fn(),
+      s3Client,
+    })
+    // Parts arrive out of order — concurrent uploads complete in arbitrary order.
+    await adapter.completeUpload("upload-123", [
+      { partNumber: 3, etag: "etag-3" },
+      { partNumber: 1, etag: "etag-1" },
+      { partNumber: 2, etag: "etag-2" },
+    ])
+    expect(s3Client.completeMultipartUpload).toHaveBeenCalledWith({
+      Bucket: "b",
+      Key: "k",
+      UploadId: "upload-123",
+      MultipartUpload: {
+        Parts: [
+          { PartNumber: 1, ETag: "etag-1" },
+          { PartNumber: 2, ETag: "etag-2" },
+          { PartNumber: 3, ETag: "etag-3" },
+        ],
+      },
+    })
+  })
+
   it("completeUpload rejects with CompleteUploadError when s3Client fails", async () => {
     const s3Client = makeMockS3Client({
       completeMultipartUpload: vi.fn().mockRejectedValue(new Error("S3 error")),

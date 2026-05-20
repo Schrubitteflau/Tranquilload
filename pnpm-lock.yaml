@@ -108,6 +108,9 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.700.0
         version: 3.1048.0
+      '@aws-sdk/s3-request-presigner':
+        specifier: ^3.700.0
+        version: 3.1048.0
       '@playwright/test':
         specifier: ^1.49.0
         version: 1.60.0
