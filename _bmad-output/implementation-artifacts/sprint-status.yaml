@@ -34,7 +34,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-14
-last_updated: 2026-04-05 # updated: epic-9-retrospective → done
+last_updated: 2026-05-21 # updated: epic-10 + all 8 stories + epic-10-retrospective → done
 project: Tranquilload
 project_key: NOKEY
 tracking_system: file-system
@@ -103,3 +103,18 @@ development_status:
   9-1-ci-workflow: done
   9-2-automated-release-with-changesets: done
   epic-9-retrospective: done
+
+  # Epic 10: P1 Test Coverage
+  # Note: story-level artifacts live in _bmad-output/test-artifacts/ (test-design,
+  # traceability, atdd-checklist) rather than per-story files in implementation-artifacts/.
+  # Retro: _bmad-output/implementation-artifacts/epic-10-retro-2026-05-21.md
+  epic-10: done
+  10-1-vitest-traceability-and-library-hardening: done
+  10-2-test-framework-playwright-minio: done
+  10-3-resume-safety-e2e-r1: done
+  10-4-cross-browser-smoke-r2: done
+  10-5-dist-integrity: done
+  10-6-doctest-harness: done
+  10-7-p1-playwright-ui: done
+  10-8-effect-singleton-and-cleanup: done
+  epic-10-retrospective: done
