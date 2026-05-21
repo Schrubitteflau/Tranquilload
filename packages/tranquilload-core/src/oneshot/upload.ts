@@ -1,7 +1,7 @@
 import { Effect, Stream } from "effect"
 import type { UploadError } from "../errors/upload-error.js"
 import { AbortError, CompleteUploadError } from "../errors/upload-error.js"
-import { LoggerService } from "../services/logger-service.js"
+import { LoggerService, safeLog } from "../services/logger-service.js"
 import { fromAbortSignal } from "../utils/abort-interop.js"
 import { normalizeCallback } from "../utils/normalize-callback.js"
 import type { UploadEvent } from "../progress/upload-event.js"
@@ -22,7 +22,7 @@ export const uploadOnceEffect = (
   const program: Effect.Effect<UploadEvent, UploadError, LoggerService> = Effect.gen(
     function* () {
       const logger = yield* LoggerService
-      yield* Effect.sync(() => logger.log("info", "One-shot upload starting"))
+      yield* safeLog(logger, "info", "One-shot upload starting")
 
       const uploadEffect: Effect.Effect<void, UploadError> = normalizeCallback(
         () => upload(stream)
@@ -37,7 +37,7 @@ export const uploadOnceEffect = (
         ? Effect.raceFirst(uploadEffect, fromAbortSignal(signal))
         : uploadEffect
 
-      yield* Effect.sync(() => logger.log("info", "One-shot upload completed"))
+      yield* safeLog(logger, "info", "One-shot upload completed")
 
       return {
         _tag: "UploadCompleted" as const,

@@ -33,7 +33,7 @@ const readAllEvents = async <T>(rs: ReadableStream<T>): Promise<T[]> => {
 }
 
 describe("uploadMultipart — Dual API entry point", () => {
-  it.effect("happy path: result resolves with UploadCompleted, events contains all events", () =>
+  it.effect("F#19 — happy path: result resolves with UploadCompleted, events contains all events (no pipeline, passthrough control)", () =>
     Effect.gen(function* () {
       const { result, events } = uploadMultipart({
         stream: fromBytes(new Uint8Array(20).fill(1)),
@@ -90,7 +90,7 @@ describe("uploadMultipart — Dual API entry point", () => {
     })
   )
 
-  it.effect("abort signal: result rejects with AbortError, events stream closes cleanly", () =>
+  it.effect("F#9 — abort signal: result rejects with AbortError, events stream closes cleanly (Dual API surface)", () =>
     Effect.gen(function* () {
       const controller = new AbortController()
       const { result, events } = uploadMultipart({
@@ -306,7 +306,7 @@ describe("uploadMultipart — Dual API entry point", () => {
     })
   )
 
-  it.effect("initiate failure: result rejects with InitiateUploadError, uploadId resolves to empty string", () =>
+  it.effect("F#6 — initiate failure: result rejects with InitiateUploadError, uploadId resolves to empty string (500 on /initiate)", () =>
     Effect.gen(function* () {
       const cause = new Error("initiation failed")
       const { result, uploadId } = uploadMultipart({

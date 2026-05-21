@@ -21,7 +21,7 @@ const collectChunks = (
   )
 
 describe("chunkStream", () => {
-  it.effect("splits into chunkSize chunks, last chunk smaller", () =>
+  it.effect("F#23 — splits into chunkSize chunks, last chunk smaller (file == chunkSize × N + remainder)", () =>
     Effect.gen(function* () {
       // 10 bytes, chunkSize 3 → chunks: [3, 3, 3, 1]
       const data = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
@@ -54,7 +54,7 @@ describe("chunkStream", () => {
     })
   )
 
-  it.effect("emits single chunk when stream is smaller than chunkSize", () =>
+  it.effect("F#21 — emits single chunk when stream is smaller than chunkSize (file < chunkSize → 1 part)", () =>
     Effect.gen(function* () {
       const data = new Uint8Array([10, 20, 30])
       const chunks = yield* collectChunks(fromBytes(data), 100)
@@ -64,7 +64,7 @@ describe("chunkStream", () => {
     })
   )
 
-  it.effect("emits no trailing empty chunk on exact multiple", () =>
+  it.effect("F#22 — emits no trailing empty chunk on exact multiple (file == chunkSize × N exactly)", () =>
     Effect.gen(function* () {
       const data = new Uint8Array(9).fill(5) // 9 = 3 * 3
       const chunks = yield* collectChunks(fromBytes(data), 3)

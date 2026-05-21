@@ -15,7 +15,7 @@ const slowStream = (chunkCount: number, chunkSize: number): ReadableStream<Uint8
   })
 
 describe("getProgress()", () => {
-  it.effect("getProgress() returns increasing bytesUploaded during an in-progress upload", () =>
+  it.effect("F#35 — getProgress() returns increasing bytesUploaded during an in-progress upload (and final value after completion)", () =>
     Effect.gen(function* () {
       let snapshotDuringUpload: Progress | null = null
 
@@ -71,7 +71,62 @@ describe("getProgress()", () => {
     })
   )
 
-  it.effect("getProgress.effect reads from Ref without launching the upload", () =>
+  // --- 10.1-INT-010 (F#52) — `fromFile.totalBytes` flows into getProgress ---
+  // Playwright's R2 progress-bar assertions multiply `bytesUploaded /
+  // totalBytes` to read the bar's width. This test locks the round-trip
+  // from File.size → fromFile.totalBytes → uploadMultipart({ totalBytes }) →
+  // getProgress().totalBytes → meaningful percentage.
+  it.effect("10.1-INT-010 (F#52) — fromFile.totalBytes flows into getProgress(); mid-upload % is computable", () =>
+    Effect.gen(function* () {
+      const fileSize = 40 // 4 parts of 10 bytes
+      const file = new File([new Uint8Array(fileSize).fill(0xab)], "progress.bin", {
+        type: "application/octet-stream",
+      })
+      const fileTotalBytes = file.size
+
+      const percentSnapshots: number[] = []
+
+      const { result, getProgress } = uploadMultipart({
+        stream: slowStream(fileSize / 10, 10),
+        chunkSize: 10,
+        totalBytes: fileTotalBytes,
+        uploadPart: async (partNumber, _chunk) => {
+          // Sample percentage from part 2 onward (Ref updates *after* uploadPart
+          // resolves for the part that triggered it — see project_context.md
+          // "Ref.update post-uploadPart timing").
+          if (partNumber >= 2) {
+            const p = await getProgress()
+            const total = Option.isSome(p.totalBytes) ? p.totalBytes.value : 0
+            const pct = total > 0 ? (p.bytesUploaded / total) * 100 : 0
+            percentSnapshots.push(pct)
+          }
+          return `etag-${partNumber}`
+        },
+        completeUpload: () => {},
+      })
+
+      yield* Effect.promise(() => result)
+
+      // totalBytes round-trip: getProgress.totalBytes equals fileTotalBytes.
+      const finalProgress = yield* Effect.promise(() => getProgress())
+      expect(finalProgress.totalBytes).toEqual(Option.some(fileSize))
+      expect(finalProgress.bytesUploaded).toBe(fileSize)
+
+      // Mid-upload percentages were captured and are monotonically non-decreasing.
+      expect(percentSnapshots.length).toBeGreaterThan(0)
+      for (let i = 1; i < percentSnapshots.length; i++) {
+        expect(
+          percentSnapshots[i]! >= percentSnapshots[i - 1]!,
+          `pct should be non-decreasing: ${JSON.stringify(percentSnapshots)}`,
+        ).toBe(true)
+      }
+      // At least one snapshot must reflect partial progress (>0% and <100%).
+      const anyPartial = percentSnapshots.some((p) => p > 0 && p < 100)
+      expect(anyPartial, `expected at least one mid-upload partial percentage; got ${JSON.stringify(percentSnapshots)}`).toBe(true)
+    }),
+  )
+
+  it.effect("F#34 — getProgress.effect reads from Ref without launching the upload (returns 0 before initiate)", () =>
     Effect.gen(function* () {
       const { result, getProgress } = uploadMultipart({
         stream: new ReadableStream({

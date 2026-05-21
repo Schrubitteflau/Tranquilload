@@ -11,7 +11,7 @@ describe('fromFile', () => {
     expect(result.totalBytes).toBe(5)
   })
 
-  it('stream yields all file bytes', async () => {
+  it('F#51 — stream yields all file bytes (fromFile byte-fidelity)', async () => {
     const bytes = new Uint8Array([10, 20, 30, 40])
     const file = new File([bytes], 'test.bin')
 

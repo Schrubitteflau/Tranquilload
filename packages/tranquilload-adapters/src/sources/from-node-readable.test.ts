@@ -3,7 +3,7 @@ import { Readable } from "node:stream"
 import { fromNodeReadable } from "./from-node-readable.js"
 
 describe("fromNodeReadable", () => {
-  it("streams all bytes from a Node Readable", async () => {
+  it("F#56 — streams all bytes from a Node Readable (CLI scenario, byte-fidelity)", async () => {
     const bytes = new Uint8Array([1, 2, 3, 4, 5])
     const readable = Readable.from([Buffer.from(bytes)])
 

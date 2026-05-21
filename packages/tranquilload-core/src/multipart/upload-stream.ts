@@ -2,7 +2,7 @@ import { Cause, Effect, Exit, Option, Ref, Schedule, Stream } from "effect"
 import type { UploadError } from "../errors/upload-error.js"
 import { CircuitOpenError, CompleteUploadError, InitiateUploadError, MaxRetriesExceededError, PartUploadError, ReconcileError, ResumeMismatchError } from "../errors/upload-error.js"
 import type { CircuitOpen, PartCompleted, ProgressTick, UploadCompleted, UploadEvent, UploadInitiated } from "../progress/upload-event.js"
-import { LoggerService } from "../services/logger-service.js"
+import { LoggerService, safeLog } from "../services/logger-service.js"
 import { fromAbortSignal } from "../utils/abort-interop.js"
 import { normalizeCallback } from "../utils/normalize-callback.js"
 import { makeCircuitBreaker, type CircuitBreakerConfig } from "./circuit-breaker.js"
@@ -255,7 +255,7 @@ export const uploadMultipartEffect = (
               timestamp: Date.now(),
             }
             yield* Ref.update(refParts, parts => [...parts, { partNumber, etag: reconciledEtag }])
-            yield* Effect.sync(() => logger.log("info", `Part ${partNumber} skipped (reconciled)`))
+            yield* safeLog(logger, "info", `Part ${partNumber} skipped (reconciled)`)
             return event
           }
 
@@ -294,7 +294,7 @@ export const uploadMultipartEffect = (
           }
 
           yield* Ref.update(refParts, parts => [...parts, { partNumber, etag }])
-          yield* Effect.sync(() => logger.log("info", `Part ${partNumber} completed`))
+          yield* safeLog(logger, "info", `Part ${partNumber} completed`)
           return event
         })
 
@@ -374,7 +374,7 @@ export const uploadMultipartEffect = (
               (cause): UploadError => new CompleteUploadError(cause)
             )
           )
-          yield* Effect.sync(() => logger.log("info", "Multipart upload completed"))
+          yield* safeLog(logger, "info", "Multipart upload completed")
           return {
             _tag: "UploadCompleted" as const,
             uploadId,

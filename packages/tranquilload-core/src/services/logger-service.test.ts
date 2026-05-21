@@ -3,7 +3,7 @@ import { Effect, Layer } from "effect"
 import { LoggerService, LoggerServiceLive, type LogLevel } from "./logger-service.js"
 
 describe("LoggerService", () => {
-  it.effect("LoggerServiceLive is a no-op (produces zero output)", () =>
+  it.effect("F#64 — LoggerServiceLive is a no-op (produces zero output) (default logger is silent)", () =>
     Effect.gen(function* () {
       const logger = yield* LoggerService
       expect(() => logger.log("info", "test message", { key: "value" })).not.toThrow()
@@ -13,7 +13,7 @@ describe("LoggerService", () => {
     }).pipe(Effect.provide(LoggerServiceLive))
   )
 
-  it.effect("custom LoggerService Layer receives structured log entries", () =>
+  it.effect("F#65, F#75 — custom LoggerService Layer receives structured log entries (user-injected logger)", () =>
     Effect.gen(function* () {
       const received: Array<{ level: LogLevel; message: string; data?: unknown }> = []
 

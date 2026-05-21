@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Layer, Stream } from "effect"
+import { Effect, Exit, Layer, Stream } from "effect"
 import { LoggerService, type LogLevel } from "./logger-service.js"
 import { uploadOnce } from "../oneshot/index.js"
 import { uploadMultipart } from "../multipart/index.js"
@@ -94,5 +94,63 @@ describe("LoggerService integration", () => {
 
       expect(received).toHaveLength(0)
     })
+  )
+
+  // --- 10.1-INT-013 (F#66) — Logger throwing doesn't break the upload ----
+  // Logging is never load-bearing. A user-injected Logger that throws on
+  // every call must NOT propagate that throw into the upload's fiber as a
+  // defect. Asserted for both the one-shot and multipart cores; without
+  // `safeLog` the second `yield*` in either core path would crash the fiber.
+  it.effect("10.1-INT-013 (F#66) — uploadOnceEffect succeeds when LoggerService.log throws on every call", () =>
+    Effect.gen(function* () {
+      let throwCount = 0
+      const throwingLogger: Layer.Layer<LoggerService> = Layer.succeed(LoggerService, {
+        log: (_level, _message, _data) => {
+          throwCount += 1
+          throw new Error("logger explosion")
+        },
+      })
+
+      const exit = yield* Effect.exit(
+        Stream.runDrain(
+          uploadOnceEffect({
+            stream: tinyStream(10),
+            upload: () => {},
+          }).pipe(Stream.provideLayer(throwingLogger)),
+        ),
+      )
+
+      expect(Exit.isSuccess(exit), `expected upload to complete despite throwing logger; exit=${JSON.stringify(exit)}`).toBe(true)
+      // Logger was attempted at least once — proves we exercised the throw path,
+      // not some "logger never called" false negative.
+      expect(throwCount).toBeGreaterThan(0)
+    }),
+  )
+
+  it.effect("10.1-INT-013 (F#66) — uploadMultipartEffect succeeds when LoggerService.log throws on every call", () =>
+    Effect.gen(function* () {
+      let throwCount = 0
+      const throwingLogger: Layer.Layer<LoggerService> = Layer.succeed(LoggerService, {
+        log: (_level, _message, _data) => {
+          throwCount += 1
+          throw new Error("logger explosion")
+        },
+      })
+
+      const exit = yield* Effect.exit(
+        Stream.runDrain(
+          uploadMultipartEffect({
+            stream: tinyStream(30), // 3 parts × 10 bytes
+            chunkSize: 10,
+            uploadPart: (n) => `etag-${n}`,
+            completeUpload: () => {},
+          }).pipe(Stream.provideLayer(throwingLogger)),
+        ),
+      )
+
+      expect(Exit.isSuccess(exit), `expected upload to complete despite throwing logger; exit=${JSON.stringify(exit)}`).toBe(true)
+      // 3 parts → at least 3 `Part N completed` + 1 `Multipart upload completed` = ≥ 4 attempted log calls.
+      expect(throwCount).toBeGreaterThanOrEqual(4)
+    }),
   )
 })

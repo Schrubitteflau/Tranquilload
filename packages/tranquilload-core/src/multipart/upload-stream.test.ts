@@ -15,7 +15,7 @@ const run = (options: Parameters<typeof uploadMultipartEffect>[0]) =>
   )
 
 describe("uploadMultipartEffect", () => {
-  it.effect("emits PartCompleted per chunk and UploadCompleted at end", () =>
+  it.effect("F#1 — emits PartCompleted per chunk and UploadCompleted at end (multipart golden, 3 parts)", () =>
     Effect.gen(function* () {
       const etags = ["etag-1", "etag-2", "etag-3"]
       const receivedParts: CompletedPart[] = []
@@ -44,7 +44,7 @@ describe("uploadMultipartEffect", () => {
     })
   )
 
-  it.effect("limits concurrent parts to maxConcurrency", () =>
+  it.effect("F#26, F#29 — limits concurrent parts to maxConcurrency (Effect-typed uploadPart at boundary)", () =>
     Effect.gen(function* () {
       const refConcurrent = yield* Ref.make(0)
       const refMaxObserved = yield* Ref.make(0)
@@ -73,7 +73,53 @@ describe("uploadMultipartEffect", () => {
     })
   )
 
-  it.effect("retries on failure and emits PartCompleted on eventual success", () =>
+  // --- 10.1-INT-018 (F#27) — maxConcurrency > totalParts (no blocking) -----
+  // The semaphore must not stall when more permits are requested than parts
+  // exist. Asserts: 4 parts upload at concurrency 16 → all complete, observed
+  // concurrency ≤ totalParts (semaphore never tries to hold > 4 permits since
+  // there are only 4 work items).
+  it.effect("10.1-INT-018 (F#27) — maxConcurrency > totalParts: all parts upload without blocking the semaphore", () =>
+    Effect.gen(function* () {
+      const refConcurrent = yield* Ref.make(0)
+      const refMaxObserved = yield* Ref.make(0)
+      const refCompleted = yield* Ref.make(0)
+
+      const uploadPart = (partNumber: number, _chunk: Uint8Array): Effect.Effect<string, never> =>
+        Effect.gen(function* () {
+          yield* Ref.update(refConcurrent, n => n + 1)
+          const current = yield* Ref.get(refConcurrent)
+          yield* Ref.update(refMaxObserved, max => Math.max(max, current))
+          yield* Effect.yieldNow()
+          yield* Ref.update(refConcurrent, n => n - 1)
+          yield* Ref.update(refCompleted, n => n + 1)
+          return `etag-${partNumber}`
+        }) as Effect.Effect<string, never>
+
+      // 4 parts of 10 bytes each = 40 total; maxConcurrency=16 (way more than parts).
+      const events = yield* run({
+        stream: fromBytes(new Uint8Array(40).fill(1)),
+        chunkSize: 10,
+        uploadPart,
+        completeUpload: () => {},
+        maxConcurrency: 16,
+      })
+
+      const completed = yield* Ref.get(refCompleted)
+      const maxObserved = yield* Ref.get(refMaxObserved)
+
+      // All 4 parts uploaded.
+      expect(completed).toBe(4)
+      // Semaphore never tried to hold more permits than parts — capped by totalParts.
+      expect(maxObserved).toBeLessThanOrEqual(4)
+      expect(maxObserved).toBeGreaterThanOrEqual(1)
+
+      // 4 PartCompleted events emitted.
+      const partEvents = events.filter(e => e._tag === "PartCompleted")
+      expect(partEvents).toHaveLength(4)
+    })
+  )
+
+  it.effect("F#3 — retries on failure and emits PartCompleted on eventual success (transient 503 → recovery)", () =>
     Effect.gen(function* () {
       const refAttempts = yield* Ref.make(0)
 
@@ -113,7 +159,7 @@ describe("uploadMultipartEffect", () => {
     })
   )
 
-  it.effect("fails with MaxRetriesExceededError when retries exhausted", () =>
+  it.effect("F#4 — fails with MaxRetriesExceededError when retries exhausted (indefinite 503)", () =>
     Effect.gen(function* () {
       const cause = new Error("permanent failure")
       const result = yield* run({
@@ -131,7 +177,7 @@ describe("uploadMultipartEffect", () => {
     })
   )
 
-  it.effect("wraps completeUpload non-UploadError in CompleteUploadError", () =>
+  it.effect("F#8 — wraps completeUpload non-UploadError in CompleteUploadError (500 on /complete)", () =>
     Effect.gen(function* () {
       const cause = new TypeError("network down")
       const result = yield* run({
@@ -147,7 +193,7 @@ describe("uploadMultipartEffect", () => {
     })
   )
 
-  it.effect("fails with AbortError when signal is aborted", () =>
+  it.effect("F#9 — fails with AbortError when signal is aborted (Effect.raceFirst path)", () =>
     Effect.gen(function* () {
       const controller = new AbortController()
 
@@ -223,7 +269,7 @@ describe("uploadMultipartEffect", () => {
 })
 
 describe("uploadMultipartEffect with reconcileCompletedParts", () => {
-  it.effect("skipped parts emit PartCompleted with reconciled etag, uploadPart not called for them", () =>
+  it.effect("F#11 — skipped parts emit PartCompleted with reconciled etag, uploadPart not called for them (golden resume: 3/5 already, only PUTs for 4 & 5)", () =>
     Effect.gen(function* () {
       const uploadedPartNumbers: number[] = []
 

@@ -26,7 +26,7 @@ describe("compress", () => {
     })
   )
 
-  it.effect("CompressionServiceLive produces compressed bytes (deflate-raw)", () =>
+  it.effect("F#16 — CompressionServiceLive produces compressed bytes (deflate-raw) (compression actually compresses)", () =>
     Effect.gen(function* () {
       const transform = yield* Effect.provide(compress("deflate-raw"), CompressionServiceLive)
       const input = new ReadableStream<Uint8Array>({
@@ -48,7 +48,7 @@ describe("compress", () => {
     })
   )
 
-  it.effect("fails with typed CompressionUnavailableError when CompressionStream is absent", () =>
+  it.effect("F#20, F#73 — fails with typed CompressionUnavailableError when CompressionStream is absent (no unhandled throw)", () =>
     Effect.gen(function* () {
       const AbsentLayer: Layer.Layer<CompressionService, CompressionUnavailableError> =
         Layer.effect(CompressionService, Effect.fail(new CompressionUnavailableError()))

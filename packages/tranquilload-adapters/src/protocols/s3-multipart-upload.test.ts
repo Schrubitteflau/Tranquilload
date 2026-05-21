@@ -13,7 +13,7 @@ afterEach(() => {
 })
 
 describe("s3MultipartUpload", () => {
-  it("throws synchronously when chunkSize < 5 MiB", () => {
+  it("F#45 — throws synchronously when chunkSize < 5 MiB (s3MultipartUpload guard)", () => {
     expect(() =>
       s3MultipartUpload({
         bucket: "b",

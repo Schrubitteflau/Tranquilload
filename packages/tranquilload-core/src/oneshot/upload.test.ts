@@ -12,7 +12,7 @@ const runStream = (opts: Parameters<typeof uploadOnceEffect>[0]) =>
   )
 
 describe("uploadOnceEffect", () => {
-  it.effect("emits UploadCompleted on success (plain value callback)", () =>
+  it.effect("F#2 — emits UploadCompleted on success (plain value callback) (one-shot golden)", () =>
     Effect.gen(function* () {
       const mockStream = new ReadableStream()
       const exit = yield* runStream({
@@ -47,7 +47,7 @@ describe("uploadOnceEffect", () => {
     })
   )
 
-  it.effect("sync throw from callback → CompleteUploadError with correct cause", () =>
+  it.effect("F#8 — sync throw from callback → CompleteUploadError with correct cause (one-shot)", () =>
     Effect.gen(function* () {
       const originalError = new Error("network failure")
       const exit = yield* runStream({
@@ -68,7 +68,7 @@ describe("uploadOnceEffect", () => {
     })
   )
 
-  it.effect("Promise rejection → CompleteUploadError with correct cause", () =>
+  it.effect("F#8 — Promise rejection → CompleteUploadError with correct cause (one-shot, async failure)", () =>
     Effect.gen(function* () {
       const originalError = new Error("async failure")
       const exit = yield* runStream({
@@ -87,7 +87,7 @@ describe("uploadOnceEffect", () => {
     })
   )
 
-  it.effect("abort mid-upload → AbortError with correct tag and message", () =>
+  it.effect("F#9, F#37 — abort mid-upload → AbortError with correct tag and message (one-shot abort)", () =>
     Effect.gen(function* () {
       const controller = new AbortController()
       const fiber = yield* Effect.fork(
