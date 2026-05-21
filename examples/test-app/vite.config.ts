@@ -5,7 +5,6 @@ import { defineConfig } from "vite"
 // `pnpm turbo build` from the repo root first, or run it in --watch mode).
 export default defineConfig({
   root: ".",
-  publicDir: "public",
   server: {
     port: 5173,
     proxy: {

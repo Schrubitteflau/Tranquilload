@@ -13,14 +13,7 @@ export interface TestAppFixtures {
 
 const API_URL = process.env.API_URL ?? "http://localhost:3000"
 
-/**
- * Path Vite serves the harness at. The test-app's vite.config has
- * `root: "."` but its `index.html` lives in `public/`, so `/` returns 404
- * while `/index.html` works (Vite serves it verbatim from publicDir). If the
- * test-app is ever moved to the idiomatic layout (index.html at the project
- * root), set this back to "/".
- */
-const APP_PATH = process.env.APP_PATH ?? "/index.html"
+const APP_PATH = process.env.APP_PATH ?? "/"
 
 /**
  * Header the test-app's server reads to scope chaos state per Playwright
