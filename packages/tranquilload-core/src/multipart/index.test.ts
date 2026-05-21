@@ -131,6 +131,55 @@ describe("uploadMultipart — Dual API entry point", () => {
     expect(uploadMultipart.effect).toBe(uploadMultipartEffect)
   })
 
+  it.effect(
+    "10.8-INT-001 (F#89) — two parallel uploadMultipart calls have isolated Refs (getProgress does not cross-talk)",
+    () =>
+      Effect.gen(function* () {
+        // Two streams with distinct sizes so cross-contamination is observable
+        // in `getProgress().bytesUploaded`. A shared Ref would yield the same
+        // value (or the last write) on both probes.
+        const callA = uploadMultipart({
+          stream: fromBytes(new Uint8Array(50).fill(0xaa)),
+          chunkSize: 10,
+          totalBytes: 50,
+          uploadPart: (n) => `etag-A-${n}`,
+          completeUpload: () => {},
+        })
+        const callB = uploadMultipart({
+          stream: fromBytes(new Uint8Array(30).fill(0xbb)),
+          chunkSize: 10,
+          totalBytes: 30,
+          uploadPart: (n) => `etag-B-${n}`,
+          completeUpload: () => {},
+        })
+
+        // Run them in parallel — the lib has no awareness of the other call.
+        yield* Effect.all(
+          [
+            Effect.promise(() => callA.result),
+            Effect.promise(() => callB.result),
+          ],
+          { concurrency: "unbounded" },
+        )
+
+        const progressA = yield* Effect.promise(() => callA.getProgress())
+        const progressB = yield* Effect.promise(() => callB.getProgress())
+
+        // Each call's getProgress reports ITS OWN bytes and totalBytes.
+        // If Refs were shared, both would return the same value.
+        expect(progressA.bytesUploaded).toBe(50)
+        expect(progressB.bytesUploaded).toBe(30)
+        expect(progressA.totalBytes).toEqual(Option.some(50))
+        expect(progressB.totalBytes).toEqual(Option.some(30))
+
+        // uploadId resolves independently per call.
+        const idA = yield* Effect.promise(() => callA.uploadId)
+        const idB = yield* Effect.promise(() => callB.uploadId)
+        expect(idA).toBeTypeOf("string")
+        expect(idB).toBeTypeOf("string")
+      }),
+  )
+
   it.effect("applies plain Transform pipeline before chunking (data reaches uploadPart transformed)", () =>
     Effect.gen(function* () {
       const received: Uint8Array[] = []

@@ -321,9 +321,15 @@ pnpm add @tranquilload/core @tranquilload/adapters effect
 
 `effect` is declared as a `peerDependency` in both packages (not a regular `dependency`). This is intentional, and the reason is specific to how Effect works.
 
-**The core constraint: `Context.Tag` uses reference equality.** Effect's dependency injection (`LoggerService`, `CompressionService`, every Layer) identifies services by *object identity* of the Tag — not by name. If two copies of `effect` end up resolved in `node_modules` (one for `@tranquilload/core`, one for your app, or one for each of our packages), then the `LoggerService` tag from copy A is a *different object* than the `LoggerService` tag from copy B. A Layer registered against copy A's tag would silently not be found when the runtime looks up copy B's tag. Services would vanish at runtime with no error.
+**The core constraint: a single shared `effect` instance.** `Context.Tag(key)()` returns a *new class object* every time it is evaluated — two copies of `effect` in `node_modules` produce two distinct `LoggerService` classes for the same key. The Effect runtime's context lookup is keyed by `tag.key` (a string), so `Layer.succeed`/`yield* Tag` would still interop across copies for *direct* service lookup; but every other invariant breaks:
 
-Declaring `effect` as a `peerDependency` forces the package manager to hoist a single shared copy. Both Tranquilload packages and your app code all import from the same `effect` instance — Tags stay identical, Layers connect correctly.
+- **Class identity** (the Tag class itself) diverges, so brand types, `instanceof` checks against Tag instances, and code that relies on the class as a sentinel all silently misbehave.
+- **`instanceof` for Effect's own classes** (`Cause`, `Exit`, `Fiber`, etc.) returns `false` across copies — error matching and Cause inspection from copy A misclassify values produced by copy B.
+- **Module-level singletons** (default Layers, the Fiber registry, the `Schedule` default scheduler) are duplicated; runtime state set in copy A is invisible from copy B.
+- **Version skew**: two copies can be different `effect` versions, so an internal type added in 3.20 is missing in 3.19 and runtime calls fail.
+- **Bundle bloat**: `effect` is hundreds of KB; two copies double the install footprint and download size.
+
+Declaring `effect` as a `peerDependency` forces the package manager to resolve a single shared copy. Tranquilload itself locks this contract down in `packages/tranquilload-core/src/peer-dep-contract.test.ts` (Story 10.8 / F#77).
 
 The same setup is what every Effect-based library does (`@effect/platform`, `@effect/schema`, `effect-http`, …) for the same reason.
 
@@ -331,7 +337,7 @@ The same setup is what every Effect-based library does (`@effect/platform`, `@ef
 
 | What we get | What it costs |
 |---|---|
-| Single shared `effect` instance → `Context.Tag` works | One extra package name at `install` time |
+| Single shared `effect` instance → class identity and singletons preserved | One extra package name at `install` time |
 | User controls the `effect` version | You need to keep the peer range honest as Effect evolves |
 | `effect` is not bundled into our `dist` → smaller install, no duplicate code if you already use Effect | Tooling warns on incompatible versions (which is the point) |
 

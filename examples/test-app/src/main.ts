@@ -89,7 +89,7 @@ interface MultipartContext {
   uploadId: string
 }
 
-function makeMultipartCallbacks(file: File, ctx: MultipartContext) {
+function makeMultipartCallbacks(file: File, ctx: MultipartContext, signal?: AbortSignal) {
   const initiate = async (): Promise<{ uploadId: string }> => {
     if (ctx.uploadId) {
       log(`Reusing uploadId ${ctx.uploadId} (resume)`)
@@ -99,6 +99,7 @@ function makeMultipartCallbacks(file: File, ctx: MultipartContext) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ filename: file.name, contentType: file.type }),
+      signal,
     })
     if (!res.ok) throw new Error(`initiate failed: HTTP ${res.status}`)
     const data = await res.json() as { uploadId: string; key: string }
@@ -112,11 +113,12 @@ function makeMultipartCallbacks(file: File, ctx: MultipartContext) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ key: ctx.key, uploadId: ctx.uploadId, partNumber }),
+      signal,
     })
     if (!signRes.ok) throw new Error(`sign failed: HTTP ${signRes.status}`)
     const { url } = await signRes.json() as { url: string }
 
-    const putRes = await fetch(url, { method: "PUT", body: chunk })
+    const putRes = await fetch(url, { method: "PUT", body: chunk, signal })
     if (!putRes.ok) throw new Error(`PUT part ${partNumber} failed: HTTP ${putRes.status}`)
     const etag = putRes.headers.get("ETag")
     if (!etag) throw new Error(`PUT part ${partNumber}: missing ETag`)
@@ -131,13 +133,15 @@ function makeMultipartCallbacks(file: File, ctx: MultipartContext) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ key: ctx.key, uploadId, parts }),
+      signal,
     })
     if (!res.ok) throw new Error(`complete failed: HTTP ${res.status}`)
   }
 
   const reconcileCompletedParts = async (): Promise<ReadonlyArray<{ partNumber: number; etag: string }>> => {
     const res = await fetch(
-      `/api/multipart/parts?key=${encodeURIComponent(ctx.key)}&uploadId=${encodeURIComponent(ctx.uploadId)}`
+      `/api/multipart/parts?key=${encodeURIComponent(ctx.key)}&uploadId=${encodeURIComponent(ctx.uploadId)}`,
+      { signal }
     )
     if (!res.ok) throw new Error(`list parts failed: HTTP ${res.status}`)
     const data = await res.json() as { parts: ReadonlyArray<{ partNumber: number; etag: string }> }
@@ -162,8 +166,8 @@ async function runMultipart(file: File, resumeFrom: ResumeState | null): Promise
     ? { key: resumeFrom.key, uploadId: resumeFrom.uploadId }
     : { key: "", uploadId: "" }
 
-  const callbacks = makeMultipartCallbacks(file, ctx)
   currentAbort = new AbortController()
+  const callbacks = makeMultipartCallbacks(file, ctx, currentAbort.signal)
 
   const { uploadId, result, events } = uploadMultipart({
     stream,
