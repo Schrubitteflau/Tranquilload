@@ -8,5 +8,8 @@ blob-report/
 .env
 .env.local
 
+# Doctest harness scratch (Story 10.6)
+integration/docs/.doctest-tmp/
+
 # Node
 node_modules/
