@@ -1,5 +1,40 @@
 # @tranquilload/adapters
 
+## 0.1.2
+
+### Patch Changes
+
+- 9883efb: Story 10.6 — Doctest harness for the README quick-start blocks, plus the adapter bug fix it surfaced.
+
+  **`@tranquilload/adapters` bug fix (s3MultipartUpload):** sort completed parts by `PartNumber` before calling `CompleteMultipartUpload`. S3 requires ascending order; the core completes parts concurrently, so the array arrives in arbitrary order. Any upload with `maxConcurrency > 1` (including the README's `4`) and ≥2 parts was failing with `InvalidPartOrder`. The test-app server route had a local workaround; the adapter itself didn't, so every direct consumer of `s3MultipartUpload` was affected. Caught by the new `10.6-D-002` doctest against MinIO. Adds a regression test (`completeUpload sorts parts by partNumber`).
+
+  **Doctest harness (test-only, no published surface change):** `tests/integration/docs/` with three tests:
+
+  - **10.6-D-001 (G#23)** — extract the README one-shot quick-start, compile against the published `.d.mts`, run against a mocked `fetch`. Assert body bytes.
+  - **10.6-D-002 (G#24)** — same pipeline against MinIO (5 MiB + 1 MiB → 2 parts). Skips locally when MinIO isn't up; CI gates with `MINIO_REQUIRED=1`.
+  - **10.6-D-003 (G#28)** — compile-only over the `Match.tag` block. Adding a new `UploadError` variant without updating the README block fails `tsc`.
+
+  **README fix (no published surface change — root README is not in the npm tarballs):** `() => /* comment */` was a parser error (no expression after `=>`). Replaced with `() => { /* comment */ }` to preserve the explanatory comment while compiling.
+
+  **New devDep**: `@aws-sdk/s3-request-presigner` in `@tranquilload/tests`.
+
+- 043361e: Story 10.8 — Cleanup invariants + peer-dep contract.
+
+  **README accuracy fix (no published surface change — root README is not in the npm tarballs):** the "Why `effect` is a peer dependency" section claimed `Context.Tag` uses reference equality for runtime lookup. Effect's `unsafeGet` is actually key-based (`self.unsafeMap.has(tag.key)`), so same-key Tags interop for `Layer.succeed`/`yield* Tag` even across copies. Rewrote the rationale to focus on what _does_ break with two copies: class identity (Tag class objects, brand types), `instanceof` for `Cause`/`Exit`/`Fiber`, module-level singletons, version skew, and bundle bloat. The peer-dep declaration is still important — just for the right reasons.
+
+  **Test additions (test-only, no surface change):**
+
+  - **10.8-INT-002 (F#77)** — new `packages/tranquilload-core/src/peer-dep-contract.test.ts` locks down: (a) `Context.Tag(key)()` produces a new class object on every evaluation (Tag identity uniqueness), and (b) Effect's context lookup is string-key-based (same-key Tags interop via Layer). Both invariants are load-bearing for the peer-dep rationale; a future Effect change to either will surface here.
+  - **10.8-INT-001 (F#89)** — new test in `multipart/index.test.ts` proves two parallel `uploadMultipart` calls have isolated `getProgress()` state (no shared Ref cross-talk).
+  - **10.8-E2E-001 (F#82)** — new `tests/e2e/ui/cleanup.spec.ts` asserts that clicking the test-app's Abort button cancels in-flight PUTs to MinIO (Playwright `requestfailed` log shows ≥1 PUT aborted, not merely abandoned). Required threading `currentAbort.signal` through the test-app's `makeMultipartCallbacks` to the inner `fetch` calls — the lib's contract is "user wires their own signal"; the lib interrupts orchestration but `Effect.tryPromise`-wrapped Promises continue silently otherwise.
+
+  **`examples/test-app` (private workspace, no published surface):** `makeMultipartCallbacks(file, ctx, signal?)` now accepts an AbortSignal and threads it into every `fetch` call (initiate, sign, PUT, complete, parts). Aligns the harness with the lib's documented signal-propagation pattern.
+
+- Updated dependencies [de95a15]
+- Updated dependencies [9883efb]
+- Updated dependencies [043361e]
+  - @tranquilload/core@0.1.2
+
 ## 0.1.1
 
 ### Patch Changes
