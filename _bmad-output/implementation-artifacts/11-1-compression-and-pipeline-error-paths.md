@@ -1,6 +1,6 @@
 # Story 11.1: Compression & Pipeline Error Paths
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -20,40 +20,57 @@ so that any user-supplied or environment-misconfigured `CompressionService` surf
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Decide the file landing zone (AC: #1-#4)
-  - [ ] Default to `packages/tranquilload-core/src/pipeline/compress-error-paths.test.ts` (co-located vitest-integration) OR `tests/integration/pipeline/compression-error-paths.test.ts` (cross-package) — the test design has no preference; prefer co-located unless a scenario crosses adapter boundaries
-  - [ ] If the existing `packages/tranquilload-core/src/pipeline/compress.test.ts` (or equivalent) already exists, extend it rather than create a new file
+- [x] Task 1: Decide the file landing zone (AC: #1-#4)
+  - [x] Default to `packages/tranquilload-core/src/pipeline/compress-error-paths.test.ts` (co-located vitest-integration) OR `tests/integration/pipeline/compression-error-paths.test.ts` (cross-package) — the test design has no preference; prefer co-located unless a scenario crosses adapter boundaries
+  - [x] If the existing `packages/tranquilload-core/src/pipeline/compress.test.ts` (or equivalent) already exists, extend it rather than create a new file
+    - **Decision:** new file `compress-error-paths.test.ts`. The existing `compress.test.ts` holds unit-level tests of the `compress` Effect (Layer-stub failure path). The new file exercises the full upload pipeline (chunkStream → `Stream.mapError` → `PartUploadError`). Keeping them separate clarifies the test level (unit vs integration) at the filename layer.
 
-- [ ] Task 2: Write 11.1-INT-001 (F#17 — sync throw) (AC: #1)
-  - [ ] `Effect.gen` test using `@effect/vitest` `it.effect`
-  - [ ] Provide a Layer that overrides `CompressionService` with a stub whose `compress` throws synchronously
-  - [ ] Assert: `Effect.exit` is `Failure` carrying a `PartUploadError`; assert `error._tag === "PartUploadError"`
+- [x] Task 2: Write 11.1-INT-001 (F#17 — sync throw) (AC: #1)
+  - [x] `Effect.gen` test using `@effect/vitest` `it.effect`
+  - [x] Provide a Layer that overrides `CompressionService` with a stub whose `compress` throws synchronously
+  - [x] Assert: `Effect.exit` is `Failure` carrying a `PartUploadError`; assert `error._tag === "PartUploadError"`
+  - [x] **Defect refusal:** also assert `Cause.dieOption(exit.cause)._tag === "None"` and `Chunk.size(Cause.defects(...)) === 0` — locks the `safeLog`-analog contract that user-injected boundary throws never crash the fiber.
 
-- [ ] Task 3: Write 11.1-INT-002 (F#18 — Effect-typed pipeline with `CompressionServiceLive`) (AC: #4)
-  - [ ] Run a tiny upload via `uploadMultipart.effect` with the default Live layer
-  - [ ] Assert the resulting bytes round-trip through a `DecompressionStream` to the original input
+- [x] Task 3: Write 11.1-INT-002 (F#18 — Effect-typed pipeline with `CompressionServiceLive`) (AC: #4)
+  - [x] Run a tiny upload via `uploadMultipart.effect` with the default Live layer
+  - [x] Assert the resulting bytes round-trip through a `DecompressionStream` to the original input
+    - **Note:** test compares decompressed bytes back to the 64-byte source (`new Uint8Array(64).map((_, i) => i % 251)`) to prove the pipeline is doing real compression work, not identity.
 
-- [ ] Task 4: Write 11.1-INT-003 (F#20 — absent `globalThis.CompressionStream`) (AC: #2)
-  - [ ] `vi.stubGlobal("CompressionStream", undefined)` (or equivalent) inside the test scope
-  - [ ] Assert the Promise rejects with a typed `PartUploadError` (or whatever variant the lib produces — confirm with `CompressionServiceLive`'s error mapping)
-  - [ ] Restore the global in `afterEach`
+- [x] Task 4: Write 11.1-INT-003 (F#20 — absent `globalThis.CompressionStream`) (AC: #2)
+  - [x] `vi.stubGlobal("CompressionStream", undefined)` (or equivalent) inside the test scope
+  - [x] Assert the Promise rejects with a typed `PartUploadError` (or whatever variant the lib produces — confirm with `CompressionServiceLive`'s error mapping)
+    - **Confirmed:** the lib produces `CompressionUnavailableError` (not `PartUploadError`) at the `compress` Effect resolution step — the Layer fails before the Transform is even called. Asserted accordingly; AC #2's "fails via the typed Effect error channel" holds.
+  - [x] Restore the global in `afterEach` (via `vi.unstubAllGlobals()`)
 
-- [ ] Task 5: Write 11.1-INT-004 / 11.1-INT-005 (F#71 sync / F#72 async) (AC: #1, #3)
-  - [ ] Two parameterized cases over `{ kind: "sync-throw" | "async-reject" }`
-  - [ ] Confirm both shapes normalize to the same `_tag` variant
+- [x] Task 5: Write 11.1-INT-004 / 11.1-INT-005 (F#71 sync / F#72 async) (AC: #1, #3)
+  - [x] Two parameterized cases over `{ kind: "sync-throw" | "async-reject" }`
+  - [x] Confirm both shapes normalize to the same `_tag` variant (`PartUploadError`, `partNumber: 0`, `attempt: 0`)
 
-- [ ] Task 6: Write 11.1-INT-006 (F#73 — Worker-context polyfilled-undefined) (AC: #2)
-  - [ ] Simulate a Worker-like environment by stubbing `globalThis.CompressionStream` to `undefined` AND blocking the fallback path
-  - [ ] If the lib has a Worker-aware code path, exercise it; otherwise confirm parity with 11.1-INT-003
+- [x] Task 6: Write 11.1-INT-006 (F#73 — Worker-context polyfilled-undefined) (AC: #2)
+  - [x] Simulate a Worker-like environment by stubbing `globalThis.CompressionStream` to `undefined` AND blocking the fallback path
+    - Uses `Object.defineProperty(globalThis, "CompressionStream", { value: undefined, configurable: true, writable: true })` to explicitly install `undefined` as the property value (the polyfill pattern), distinct from `vi.stubGlobal` (which also assigns `undefined` but is captured for `vi.unstubAllGlobals`). Restored via cached `PropertyDescriptor` in `afterEach`.
+  - [x] If the lib has a Worker-aware code path, exercise it; otherwise confirm parity with 11.1-INT-003
+    - **Confirmed parity:** `CompressionServiceLive` uses `typeof cs === "undefined"` which catches both shapes (missing global and explicit `undefined`). No separate Worker-aware code path; the existing check is robust.
 
-- [ ] Task 7: Triptyque verification (build + test + typecheck)
-  - [ ] `pnpm turbo build` green
-  - [ ] `pnpm vitest run --filter @tranquilload/core` green (all 6 new tests)
-  - [ ] `pnpm turbo typecheck` green
+- [x] Task 7: Triptyque verification (build + test + typecheck)
+  - [x] `pnpm turbo build` green (3.979s; 4 of 4 successful)
+  - [x] `pnpm vitest run --filter @tranquilload/core` green (163 tests across 19 files; +6 new)
+  - [x] `pnpm turbo typecheck` green (5.535s; 5 of 5 successful)
+  - [x] Full repo recursive test sweep: 195 tests green (core: 163, adapters: 32) — no regressions
 
-- [ ] Task 8: Update traceability
-  - [ ] Add 11.1-INT-001 → 11.1-INT-006 rows to `_bmad-output/test-artifacts/traceability/traceability-report-epic-11.md` (create the file if needed, mirroring the Epic 10 report shape)
-  - [ ] Each row maps to its F#N from the brainstorming session
+- [x] Task 8: Update traceability
+  - [x] Add 11.1-INT-001 → 11.1-INT-006 rows to `_bmad-output/test-artifacts/traceability/traceability-report-epic-11.md` (created on first story; mirrors Epic 10 report shape: §1 epic rollup, §2 forward matrix per story, §3 reverse matrix per risk cluster, §4 real lib findings, §5 gate decision, §6 next update marker)
+  - [x] Each row maps to its F#N from the brainstorming session
+
+## Real Lib Finding (Story 11.1)
+
+**Symptom:** Initial RED for 11.1-INT-001 (F#17) and 11.1-INT-004 (F#71) — a sync throw inside a user-injected `CompressionService.compress` produced a fiber DEFECT (raw Error propagated out of `Effect.gen`), not a typed `PartUploadError`.
+
+**Fix:** `packages/tranquilload-core/src/pipeline/compress.ts` — wrap `svc.compress(stream, algorithm)` in `try/catch`. On sync throw, return a `ReadableStream` that immediately errors via `controller.error(cause)`. The error then propagates through `chunkStream`'s `Stream.fromReadableStream` → `Stream.mapError` → `PartUploadError(0, 0, cause)`. Mirrors the `safeLog` precedent (Story 10.1-INT-013, F#66) — never let a user-injected boundary callable defect the upload fiber.
+
+**Behavior change:** purely additive; what was a fiber defect (unrecoverable) is now a typed `PartUploadError` (recoverable via `Effect.catchTag`, `Match.tag`, etc.). No existing test regressed.
+
+**Out-of-scope by design:** the public `uploadMultipart` path where a user passes a raw `Transform` function directly via `options.pipeline: Transform` — that function is user-owned arbitrary code; the lib's contract only covers the `compress()` helper. A future story can wrap `options.pipeline(options.stream)` in `Effect.try` at the dual-API boundary if that becomes a contract.
 
 ## Dev Notes
 
@@ -98,15 +115,41 @@ Per `feedback_p2_default_to_lib.md`: pure library API, no DOM, no browser-specif
 
 ### Agent Model Used
 
-(to be filled by dev)
+Claude Opus 4.7 (`claude-opus-4-7`) — `bmad-dev-story` workflow.
 
 ### Debug Log References
 
+- RED state confirmed before lib fix: `pnpm --filter @tranquilload/core test -- compress-error-paths` → 2 failed (11.1-INT-001, 11.1-INT-004), 4 passed. Raw `Error("svc sync throw")` thrown out of `Effect.gen` at `src/pipeline/compress.ts:8:59`.
+- GREEN after lib fix: same command → 6 passed.
+- Triptyque: `pnpm turbo build` (3.98s ✅), full repo recursive test (195 tests ✅), `pnpm turbo typecheck` (5.54s ✅).
+- One incidental typecheck issue caught: `DecompressionStream` needed the same `as unknown as TransformStream<Uint8Array, Uint8Array>` cast that `CompressionServiceLive` uses (DOM vs `@types/node` lib mismatch). Cast applied at the test call-site only; no lib change needed.
+
 ### Completion Notes List
+
+- ✅ All 6 story tests authored at integration level (`compress-error-paths.test.ts`), 100% pass, F#N prefix convention preserved (`11.1-INT-N (F#X) — ...`).
+- ✅ Real lib finding shipped inline in `compress.ts` — `svc.compress(...)` is now defect-safe at the `compress()` boundary; documented under § Real Lib Finding above.
+- ✅ Epic 11 traceability report created at `_bmad-output/test-artifacts/traceability/traceability-report-epic-11.md` — mirrors Epic 10 shape; will be appended to as 11.2–11.7 land.
+- ✅ Sprint-status flipped `ready-for-dev → in-progress → review` for `11-1-compression-and-pipeline-error-paths`.
+- ✅ No regression: 195 tests pass across `@tranquilload/core` (163) and `@tranquilload/adapters` (32). Epic 10 P1 coverage intact.
+- 🔎 No new dependencies added.
+- 🔎 D1/D2/D3 (`epics.md` Open Decisions) untouched — none affect 11.1.
 
 ### Change Log
 
+| Date | Change | File(s) |
+|---|---|---|
+| 2026-05-22 | Story 11.1 implemented: 6 integration tests for compression error paths (F#17, F#18, F#20, F#71, F#72, F#73). | `packages/tranquilload-core/src/pipeline/compress-error-paths.test.ts` (new) |
+| 2026-05-22 | **Real lib finding** — `compress()` Transform now wraps `svc.compress` in try/catch and returns a lazily-erroring stream so user-injected sync throws surface as `PartUploadError(0, 0, cause)` (via `chunkStream`'s `Stream.mapError`) instead of fiber defects. Mirrors the `safeLog` precedent (Story 10.1-INT-013). | `packages/tranquilload-core/src/pipeline/compress.ts` |
+| 2026-05-22 | Created Epic 11 traceability report mirroring Epic 10 shape; populated Story 11.1 section. | `_bmad-output/test-artifacts/traceability/traceability-report-epic-11.md` (new) |
+| 2026-05-22 | Sprint-status updated: `11-1-compression-and-pipeline-error-paths` → `review`. | `_bmad-output/implementation-artifacts/sprint-status.yaml` |
+
 ### File List
+
+- `packages/tranquilload-core/src/pipeline/compress.ts` — modified (try/catch wrap around `svc.compress`)
+- `packages/tranquilload-core/src/pipeline/compress-error-paths.test.ts` — new (6 integration tests)
+- `_bmad-output/test-artifacts/traceability/traceability-report-epic-11.md` — new (Epic 11 traceability rollup)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — modified (status + last_updated)
+- `_bmad-output/implementation-artifacts/11-1-compression-and-pipeline-error-paths.md` — modified (this file: status, tasks, dev agent record)
 
 ## Senior Developer Review (AI)
 
