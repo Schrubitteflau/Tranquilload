@@ -2,8 +2,11 @@
 stepsCompleted: [1, 2, 3, 4]
 status: complete
 completedAt: '2026-03-08'
+lastAppended: '2026-05-22'
+lastAppendedEpic: 11
 inputDocuments:
   - '_bmad-output/planning-artifacts/architecture.md'
+  - '_bmad-output/test-artifacts/test-design-epic-11.md'
 ---
 
 # Tranquilload - Epic Breakdown
@@ -116,6 +119,15 @@ The library user can connect the lib to S3, HTTP one-shot, browser File API, or 
 ### Epic 9: CI/CD & Publishing
 The team can publish versioned npm releases automatically via Changesets, with CI validating typecheck + tests + build on every PR.
 **FRs covered:** Additional requirements (GitHub Actions, Changesets, independent versioning)
+
+### Epic 10: P1 Test Coverage (tracked separately)
+The team can run a P1 nightly suite covering the 42 release-critical scenarios surfaced by `brainstorming-session-2026-05-17-001`, gating v0.1.x releases.
+**Status:** done (2026-05-21, v0.1.2). Story-level artifacts live in `_bmad-output/test-artifacts/test-design-epic-10.md` and `_bmad-output/test-artifacts/traceability/`; sprint status in `sprint-status.yaml`. No per-story files in `implementation-artifacts/` for this epic — recorded here for `epics.md` continuity.
+**FRs covered:** Transversal (locks behaviour of FR1–FR10 + NFR1–NFR7 via P1 coverage)
+
+### Epic 11: P2 Nightly Coverage
+The team can run a P2 nightly suite covering ~87 scenarios across compression error paths, layer/logger/cleanup safety, resume edges, persona journeys, chaos, stream/chunking edges, and cross-browser/DIST/DOC gap-closers — extending Epic 10's P1 gate to a full nightly green bar.
+**FRs covered:** Transversal (extends Epic 10; targets FR3/FR4 error paths, FR5 observability, FR6 resilience, FR7 resume edges, FR8 adapter edges, NFR1/NFR3 cross-browser, NFR5 logger safety)
 
 ## Epic 1: Project Foundation
 
@@ -675,3 +687,257 @@ So that versioning, CHANGELOG generation, and npm publishing are fully automated
 **Given** no changeset file is present in a PR
 **When** it is merged to `main`
 **Then** no version bump or publish occurs — the release PR is not updated
+
+## Epic 11: P2 Nightly Coverage
+
+The team can run a P2 nightly suite covering ~87 scenarios across compression error paths, layer/logger/cleanup safety, resume edges, persona journeys, chaos, stream/chunking edges, and cross-browser/DIST/DOC gap-closers — extending Epic 10's P1 gate to a full nightly green bar.
+
+**Source spec:** `_bmad-output/test-artifacts/test-design-epic-11.md` (the test design IS the spec input — there is no `tech-spec-epic-11.md`).
+
+**Coverage origin:** P2 subset (~85 scenarios) of `_bmad-output/brainstorming/brainstorming-session-2026-05-17-001.md`, re-validated 2026-05-21 with no obsoletion from Epic 10's library bug fixes.
+
+**Policy:** `feedback_p2_default_to_lib.md` (Epic 10 retro action #3) — P2 specs default to `tests/integration/` (vitest) or `tests/e2e/lib/` (PW-Lib). Only escalate to `tests/e2e/ui/` when a scenario genuinely needs the test-app DOM (persona journeys only).
+
+**Effort:** ~75–115h (~3–4.5 sprint-weeks), ~1.6× Epic 10's footprint at 2× scenario count.
+
+### Open Decisions (recorded 2026-05-22)
+
+| # | Decision | Resolution | Impact |
+|---|---|---|---|
+| **D1** | **R-P2-4 — `simpleHttpUpload` missing `duplex: 'half'` fix** — schedule Epic 13 micro-fix in parallel OR codify the gap in Story 11.7? | **Codify gap in Story 11.7-E2E-002.** Test documents current cross-browser behaviour; the fix is tracked as an Epic 13 candidate and the test flips from "documents gap" to "validates fix" once Epic 13 lands. | Story 11.7-E2E-002 in scope; 11.7 exit criterion allows WAIVER + Epic 13 ticket. |
+| **D2** | **R-P2-11 — `CircuitOpenError` (F#10) pending circuit-breaker wire-up** — keep deferred to Epic 12 OR promote circuit-breaker to its own micro-epic? | **Keep deferred to Epic 12.** Listed in Story 11.7-E2E-001 with explicit DEFER status; will graduate to Epic 12 once the wire-up lands as part of Epic 13's library hardening. No micro-epic detour. | 11.7-E2E-001 stays in the design matrix for traceability but contributes 0h to Epic 11 effort. |
+| **D3** | **Story 11.4 persona WebKit flake risk (~2 week slip)** — pre-emptively demote to weekly OR commit to stabilization? | **Commit to stabilization.** Run 11.4 in the standard nightly tier; only demote individual specs to weekly via the `@flaky` tag if WebKit timings prove unstable in practice. Chaos-isolation audit (150/150 PASS, commit `b493bd0`) is the precedent that personas inherit. | Story 11.4 nominal effort 14–20h holds; ~2 week slip is the worst-case contingency, not the plan. |
+
+### Story 11.1: Compression & Pipeline Error Paths
+
+As a library maintainer,
+I want vitest-integration coverage for compression and pipeline error paths,
+So that any user-supplied or environment-misconfigured `CompressionService` surfaces a typed `UploadError`, never a fiber DEFECT.
+
+**Acceptance Criteria:**
+
+**Given** a custom `CompressionService` that throws synchronously
+**When** `compress()` is added to the pipeline and an upload runs
+**Then** the failure surfaces as `PartUploadError` in the Effect error channel (test ID 11.1-INT-001, 11.1-INT-004), and the upload fiber does not DEFECT
+
+**Given** `globalThis.CompressionStream` is `undefined` or polyfilled to `undefined`
+**When** `compress()` is invoked via the Promise or Effect API
+**Then** `result` rejects (Promise) or fails in the typed error channel (Effect) — no unhandled exception (test IDs 11.1-INT-003, 11.1-INT-006)
+
+**Given** a `CompressionService` returning an async rejection
+**When** an upload runs
+**Then** the rejection is normalized and produces a typed error (test ID 11.1-INT-005)
+
+**Given** an Effect-typed pipeline with `CompressionServiceLive`
+**When** the upload runs via `.effect`
+**Then** the Layer resolves correctly and produces the expected compressed output (test ID 11.1-INT-002)
+
+**Coverage:** 6 vitest-integration tests (test IDs 11.1-INT-001 → 11.1-INT-006). Risk cluster R-P2-5.
+
+### Story 11.2: Layers, Logger, Cleanup & Resource Safety
+
+As a library maintainer,
+I want vitest-integration + one PW-Lib heap-stability test covering layer composition, logger safety, and resource cleanup on all termination paths,
+So that long-lived consumers do not leak streams, semaphores, or memory, and so layer-composition edge cases produce deterministic Effect errors instead of silent corruption.
+
+**Acceptance Criteria:**
+
+**Given** a user-injected recording logger
+**When** an upload runs through its lifecycle
+**Then** the expected sequence of log lines is captured deterministically (test ID 11.2-INT-001), and a logger throwing inside `logger.log` is swallowed by `safeLog` without crashing the upload fiber (verified by the existing Story 10.1-INT-013 contract; Story 11.2-INT-002 extends with a slow-logger latency check)
+
+**Given** a `Layer.empty` is provided where the lib expects `CompressionServiceLive` or `LoggerServiceLive`
+**When** the upload runs
+**Then** the Effect runtime fails with a clear, typed error (test ID 11.2-INT-007) — no silent crash
+
+**Given** a user Layer stacked above `CompressionServiceLive`
+**When** the upload resolves the Tag
+**Then** last-writer-wins semantics hold (test ID 11.2-INT-009)
+
+**Given** an upload that errors, aborts, or completes
+**When** the Effect scope closes
+**Then** the source `ReadableStream` reader is released (11.2-INT-012), the pipeline cancels the upstream source on error (11.2-INT-013), the semaphore permit is released on terminal error (11.2-INT-016), and Layer finalizers run exactly once (11.2-INT-010)
+
+**Given** 100 sequential uploads in a Chromium PW-Lib runner
+**When** `performance.memory.usedJSHeapSize` is sampled before and after
+**Then** the heap stays flat (no monotonic growth indicating leaks) (test ID 11.2-E2E-001)
+
+**Given** a TCP RST during a PUT
+**When** the upload runs
+**Then** the failure surfaces as `PartUploadError`, not a hang (test ID 11.2-INT-014)
+
+**Coverage:** 17 vitest-integration tests + 1 PW-Lib heap stability test = 18 net-new (test IDs 11.2-INT-001 → 11.2-INT-017 + 11.2-E2E-001). Risk clusters R-P2-2 + R-P2-8.
+
+### Story 11.3: Resume + Reconcile + Error-Mapping Edges
+
+As a library maintainer,
+I want vitest-integration coverage for the resume + reconcile error-mapping edges that fell out of Epic 10's P1 scope,
+So that every documented resume-failure mode (deleted uploadId, expired presigned URL, stale reconcile, 0-parts reconcile, presigned-URL failure inside `uploadPart`, 500 on `/parts`) maps to a phase-accurate `UploadError` variant.
+
+**Acceptance Criteria:**
+
+**Given** the adapter throws inside `uploadPart` because of a presigned-URL failure (`PresignedUrlError`)
+**When** the upload runs
+**Then** the failure wraps as `PartUploadError.cause` and retry semantics apply uniformly (test ID 11.3-INT-001 — codifies the design-gap surfaced by F#5)
+
+**Given** the resume call hits a 500 on the `/parts` reconcile endpoint
+**When** the upload starts
+**Then** the failure surfaces as `ReconcileError` BEFORE any PUT is attempted (test ID 11.3-INT-002)
+
+**Given** an `uploadId` that the server reports as `NoSuchUpload` (deleted)
+**When** the resume runs
+**Then** the error maps to a phase-accurate variant (test ID 11.3-INT-003)
+
+**Given** a presigned URL that expires between sign and PUT
+**When** the resume runs with re-sign-per-attempt
+**Then** the upload recovers (test ID 11.3-INT-004 — complements the existing Story 10.3-E2E-002 path with a phase-accurate Effect-channel error)
+
+**Given** `reconcileCompletedParts` returns a result that becomes stale (the server deletes a part between `ListParts` and the next op)
+**When** the upload continues
+**Then** the lib detects the divergence (test ID 11.3-INT-005)
+
+**Given** `reconcileCompletedParts` returns an empty array for a known `uploadId`
+**When** the upload starts
+**Then** behaviour is identical to a fresh upload from part 1 (test ID 11.3-INT-006)
+
+**Coverage:** 6 vitest-integration tests (test IDs 11.3-INT-001 → 11.3-INT-006). Risk cluster R-P2-6.
+
+### Story 11.4: Persona Journeys (UI Flows)
+
+As a library maintainer,
+I want Playwright-UI persona journey specs that drive the full test-app DOM through realistic user-failure scenarios (tunnel disconnect, screen lock, Wi-Fi handoff, forgot-await, foot-gun `getProgress`, custom retry schedule, MinIO multipart TTL),
+So that the documented foot-guns and persona-failures stay locked behaviour and do not silently regress.
+
+**Acceptance Criteria:**
+
+**Given** the test-app upload UI is loaded and a multipart upload is in flight
+**When** the network is dropped for 30 seconds (P#A1 tunnel disconnect) or the page is throttled to simulate a screen lock (P#A2)
+**Then** the documented behaviour holds: default retry schedule proves insufficient for 30s+ outages (locks the tuning need into a test), and screen-lock throttling does not crash the upload fiber (test IDs 11.4-E2E-001, 11.4-E2E-002)
+
+**Given** an upload that survives a Wi-Fi → 5G handoff (P#A4)
+**When** the underlying TCP connection dies and `fetch` errors
+**Then** retry resilience kicks in and the upload completes (test ID 11.4-E2E-003)
+
+**Given** a developer who forgets to `await result` on `uploadMultipart()` (P#B1)
+**When** the upload fails
+**Then** the unhandled rejection surface is deterministic and documented (test ID 11.4-E2E-004)
+
+**Given** an upload whose `uploadPart` callback for part 1 calls `getProgress()` inside itself (P#B5)
+**When** the call happens BEFORE the `Ref.update` post-uploadPart timing window
+**Then** the snapshot returns 0 bytes — locking the documented foot-gun from MEMORY (`normalizeCallback double-wrapping` + `Ref.update post-uploadPart timing`) (test ID 11.4-E2E-005)
+
+**Given** `retrySchedule: Schedule.recurs(10).pipe(Schedule.fixed("1 second"))` is supplied (P#B6)
+**When** transient failures occur
+**Then** the schedule is honoured end-to-end through the test-app (test ID 11.4-E2E-006)
+
+**Given** an upload abandoned long enough for MinIO to GC the multipart (P#C2)
+**When** the user reloads the page and the test-app calls `reconcileCompletedParts`
+**Then** reconcile returns empty AND HEAD on the key fails — current behaviour is documented as fresh-start, with the gap surfaced as an Epic 13 candidate (test ID 11.4-E2E-007)
+
+**Stabilization commitment (D3):** Story 11.4 runs in the standard nightly tier. Individual specs that prove unstable on WebKit may be demoted to weekly via the `@flaky` tag, but this is the contingency, not the plan. The 150/150 chaos-isolation audit is the precedent the personas inherit.
+
+**Coverage:** 7 PW-UI persona specs (test IDs 11.4-E2E-001 → 11.4-E2E-007). Risk clusters R-P2-1 + R-P2-10. **Only PW-UI story in Epic 11** — all other P2 stories follow the lib-default policy.
+
+### Story 11.5: Chaos Cluster (Intermittent + Simultaneous + Degraded)
+
+As a library maintainer,
+I want PW-Lib chaos coverage for intermittent, simultaneous, and degraded-network failure clusters via the per-session chaos endpoint,
+So that retry, abort, and backpressure semantics hold under realistic adversarial conditions across the 3-browser matrix.
+
+**Acceptance Criteria:**
+
+**Given** 30% of PUTs fail randomly (C#1) or an offline window lasts 8 seconds (C#3)
+**When** the upload runs with the default retry schedule
+**Then** flapping recovers and the offline-window failure exposes the tuning need into a test (test IDs 11.5-E2E-001, 11.5-E2E-002)
+
+**Given** a partial response truncation (`Content-Length` lies) (C#4), missing ETag in 200 OK (C#5), or garbage ETag (C#6)
+**When** the upload runs
+**Then** the error maps to `PartUploadError` (C#4, C#5) or `MinIO InvalidPart` on Complete (C#6) (test IDs 11.5-E2E-003 → 11.5-E2E-005)
+
+**Given** two parts fail at the same time (C#7) or an abort fires during retry backoff (C#8)
+**When** the orchestration fiber processes the failures
+**Then** no shared-state bugs leak across retry loops (C#7) and `Effect.raceFirst` wins immediately against backoff (C#8) (test IDs 11.5-E2E-006, 11.5-E2E-007 — critical interrupt semantics)
+
+**Given** degraded network conditions — slow 3G (C#12), high-latency + low-bandwidth (C#13), slow-loris server (C#15)
+**When** the upload runs
+**Then** no hardcoded client-side timeouts fire (slow 3G), abort stays responsive, and slow-loris surfaces the need for a future `partTimeout` option (Epic 13 candidate) (test IDs 11.5-E2E-008 → 11.5-E2E-010)
+
+**Given** an abort fires during `/initiate`, between parts, or during `/complete` (C#18, C#19, C#20)
+**When** the orchestration tears down
+**Then** the documented behaviour holds: orphan multipart on `/initiate` abort, partial state in `refParts` on between-parts abort, no clean late-stage recovery on `/complete` (Epic 13 candidates) (test IDs 11.5-E2E-011 → 11.5-E2E-013)
+
+**Test mechanism:** all 13 specs run via the `request` fixture's per-session chaos endpoint (validated by `tests/e2e/ui/chaos-isolation.spec.ts` at 150/150 PASS). PW-Lib level — no test-app UI navigation, no `addInitScript` monkey-patch.
+
+**Coverage:** 13 PW-Lib chaos specs (test IDs 11.5-E2E-001 → 11.5-E2E-013). Risk clusters R-P2-3 + R-P2-9.
+
+### Story 11.6: Stream/Chunking + One-Shot Edges + Events/Progress Dual-Mode
+
+As a library maintainer,
+I want vitest-integration coverage across stream/chunking edges, one-shot upload edges, `getProgress()` corner cases, `networkMultiplier` extrema, `computeOptimalPartSize` round-trip, File/Buffer/Node `Readable` sources, and the events-stream lifecycle,
+So that all 28 documented surface-area edges from the brainstorming F# block are locked behaviour and no regression slips into a v0.1.x patch release.
+
+**Acceptance Criteria:**
+
+**Given** edge stream/chunking inputs (zero-byte file, mid-read source error, concurrency saturation, chunkSize=1, chunkSize > totalBytes, non-integer chunkSize)
+**When** the upload runs
+**Then** behaviour matches the documented contract — typed error or graceful single-part — for each input (test IDs 11.6-INT-001 → 11.6-INT-003, 11.6-INT-013 → 11.6-INT-015)
+
+**Given** one-shot edges (sync `completeUpload`, Effect-typed `initiate` failure, abort mid-stream, server 4xx, empty stream)
+**When** `uploadOnce` runs
+**Then** each edge produces the documented result — typed error or success (test IDs 11.6-INT-004, 11.6-INT-005, 11.6-INT-010 → 11.6-INT-012)
+
+**Given** events/progress dual-mode (cancelled events reader, `getProgress()` before initiate, `getProgress()` after completion, `uploadId` promise resolving even on later failure, events-stream-not-read latency)
+**When** the upload runs
+**Then** no leak, no surprise zero, no slow-down (test IDs 11.6-INT-006 → 11.6-INT-009, 11.6-INT-027, 11.6-INT-028)
+
+**Given** `networkMultiplier` with no samples or saturated slow conditions
+**When** the factor is sampled
+**Then** the floor (1.0 on no samples; 0.1 on saturated slow — below S3 floor, user must clamp) is documented (test IDs 11.6-INT-016, 11.6-INT-017)
+
+**Given** `computeOptimalPartSize` invoked with a range of inputs
+**When** the resulting `chunkSize` flows through `uploadMultipart`
+**Then** actual PUT body sizes round-trip the calculation (test ID 11.6-INT-018)
+
+**Given** File / Buffer / Node `Readable` source edges (empty File, revoked blob URL, MIME parity, backpressure under slow consumer, ENOENT on `createReadStream`, `Readable.destroy(err)`, paused Readable auto-resume, Buffer no-realloc)
+**When** the upload runs
+**Then** each adapter edge surfaces the documented behaviour (test IDs 11.6-INT-019 → 11.6-INT-026)
+
+**Coverage:** 28 vitest-integration tests (test IDs 11.6-INT-001 → 11.6-INT-028). Risk clusters R-P2-7 + R-P2-13. High count, low cost each (~0.5h/test mean).
+
+### Story 11.7: Cross-Browser + DIST + DOC + Filename Gap-Closers
+
+As a library maintainer,
+I want mixed-harness coverage for cross-browser streaming body behaviour, DIST tree-shaking + `node:*` boundary, doctest extensions, and filename edges,
+So that the bundle/runtime contract holds across all 3 browsers and the README examples stay reproducible.
+
+**Acceptance Criteria:**
+
+**Given** F#10 / `CircuitOpenError` — circuit-breaker not yet wired (R-P2-11)
+**When** Epic 11 nightly runs
+**Then** test ID 11.7-E2E-001 is recorded as **DEFER to Epic 12** with no effort consumed in Epic 11; entry remains in the design matrix for traceability (per Decision D2)
+
+**Given** `simpleHttpUpload` lacking the `duplex: 'half'` fix (R-P2-4, per Decision D1)
+**When** the test runs across Chromium / Firefox / WebKit
+**Then** the spec documents the current cross-browser gap; the same spec validates the fix once the Epic 13 candidate lands (test ID 11.7-E2E-002 — exit criterion allows WAIVER + Epic 13 ticket)
+
+**Given** `CompressionStream` `deflate-raw` algorithm support across browsers (older WebKit lacks the algo, R-P2-12)
+**When** the smoke spec runs
+**Then** the support matrix is documented in the README and the spec catches a regression (test ID 11.7-E2E-003)
+
+**Given** the built bundles in `packages/*/dist/`
+**When** DIST validation runs (extends Epic 10's `tests/integration/dist/` harness)
+**Then** a oneshot-only import excludes multipart code from the final bundle (test ID 11.7-X-001 — tree-shake proof), and no `node:*` import appears in the browser bundle outside the `fromNodeReadable` boundary (test ID 11.7-X-002)
+
+**Given** special-character (`#`, `?`, `%`, `+`, ` `, `café`, `🚀`, RTL) and >1024-char filenames (R-P2-14)
+**When** the S3 key path is built
+**Then** sanitization holds for special chars (test ID 11.7-INT-001) and the >1024-char case fails with `InitiateUploadError` (test ID 11.7-INT-002)
+
+**Given** the README resume example, compression example, and test-app setup script
+**When** the doctest harness runs (extends Epic 10's `spawnSync` harness)
+**Then** each example compiles and executes end-to-end — size assertion for compression, CI-runnable for test-app README (test IDs 11.7-D-001 → 11.7-D-003)
+
+**Coverage:** 11 total — 3 PW-Lib (F#10 deferred, F#40/G#2, G#3) + 2 DIST (G#13, G#15) + 3 DOC (G#25, G#27, G#29) + 3 VT (G#17, G#19 + 1 deferred entry). Risk clusters R-P2-4, R-P2-11 (deferred), R-P2-12, R-P2-14.
+
+---
+
+**Total Epic 11 scope:** 87 net-new tests + 1 deferred to Epic 12. ~75–115h effort. See `_bmad-output/test-artifacts/test-design-epic-11.md` for the full coverage matrix, execution tiers (Smoke / Tier A VT / Tier B PW-Lib / Tier C PW-UI), and gate criteria.

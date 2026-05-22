@@ -34,7 +34,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-14
-last_updated: 2026-05-21 # updated: epic-10 + all 8 stories + epic-10-retrospective → done
+last_updated: 2026-05-22 # updated: epic-11 + all 7 stories formalized (ready-for-dev) via bmad-create-epics-and-stories
 project: Tranquilload
 project_key: NOKEY
 tracking_system: file-system
@@ -118,3 +118,18 @@ development_status:
   10-7-p1-playwright-ui: done
   10-8-effect-singleton-and-cleanup: done
   epic-10-retrospective: done
+
+  # Epic 11: P2 Nightly Coverage
+  # Spec input: _bmad-output/test-artifacts/test-design-epic-11.md (no tech-spec — test design IS the spec).
+  # Source: P2 subset of _bmad-output/brainstorming/brainstorming-session-2026-05-17-001.md, re-validated 2026-05-21.
+  # Open decisions (recorded in epics.md): D1 R-P2-4 simpleHttpUpload duplex → codify gap in 11.7;
+  #   D2 R-P2-11 CircuitOpen → defer to Epic 12; D3 Story 11.4 personas → commit to stabilization.
+  epic-11: in-progress
+  11-1-compression-and-pipeline-error-paths: ready-for-dev
+  11-2-layers-logger-cleanup-and-resource-safety: ready-for-dev
+  11-3-resume-reconcile-and-error-mapping-edges: ready-for-dev
+  11-4-persona-journeys-ui-flows: ready-for-dev
+  11-5-chaos-cluster-intermittent-simultaneous-degraded: ready-for-dev
+  11-6-stream-chunking-one-shot-and-dual-mode-edges: ready-for-dev
+  11-7-cross-browser-dist-doc-and-filename-gap-closers: ready-for-dev
+  epic-11-retrospective: optional
