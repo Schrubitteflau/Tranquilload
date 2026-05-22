@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Cause, Chunk, Effect, Exit, Layer, Stream } from "effect"
-import { afterEach, beforeEach, vi } from "vitest"
+import { afterEach, beforeEach } from "vitest"
 import { PartUploadError } from "../errors/upload-error.js"
 import { uploadMultipartEffect } from "../multipart/upload-stream.js"
 import {
@@ -113,22 +113,36 @@ describe("compress — error-path integration (Story 11.1)", () => {
       })
   )
 
-  // --- 11.1-INT-003 (F#20) — absent globalThis.CompressionStream -------------
-  // Real `CompressionServiceLive` with the global stripped at runtime. Locks
-  // the F#20 contract at the *integration* level — Story 10's existing
-  // `compress.test.ts:51` covers the *unit* level (Layer-stub failure path).
-  describe("absent globalThis.CompressionStream", () => {
+  // --- 11.1-INT-003 (F#20) — truly-absent globalThis.CompressionStream ------
+  // Real `CompressionServiceLive` with the global property genuinely DELETED
+  // (`hasOwnProperty === false`) — the F#20 brainstorming shape. Parity test
+  // 11.1-INT-006 below covers the F#73 polyfilled-undefined shape where the
+  // property is defined-as-undefined (`hasOwnProperty === true`). Using
+  // `delete` here (not `vi.stubGlobal(..., undefined)`, which WRITES the
+  // property) keeps the F#20 vs F#73 traceability honest: if the lib check
+  // ever shifts from `typeof cs === "undefined"` to `"CompressionStream" in
+  // globalThis`, only this test catches the regression for F#20.
+  describe("absent globalThis.CompressionStream (property deleted)", () => {
+    let restore: PropertyDescriptor | undefined
     beforeEach(() => {
-      vi.stubGlobal("CompressionStream", undefined)
+      restore = Object.getOwnPropertyDescriptor(globalThis, "CompressionStream")
+      delete (globalThis as { CompressionStream?: unknown }).CompressionStream
     })
     afterEach(() => {
-      vi.unstubAllGlobals()
+      if (restore !== undefined) {
+        Object.defineProperty(globalThis, "CompressionStream", restore)
+      }
     })
 
     it.effect(
-      "11.1-INT-003 (F#20) — CompressionServiceLive fails with typed CompressionUnavailableError (no defect)",
+      "11.1-INT-003 (F#20) — CompressionServiceLive fails with typed CompressionUnavailableError when global property is absent (no defect)",
       () =>
         Effect.gen(function* () {
+          // Confirm setup actually deleted the property (distinguishes from F#73).
+          expect(
+            Object.prototype.hasOwnProperty.call(globalThis, "CompressionStream")
+          ).toBe(false)
+
           const exit = yield* Effect.exit(
             Effect.provide(compress("deflate-raw"), CompressionServiceLive)
           )

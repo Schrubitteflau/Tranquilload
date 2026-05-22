@@ -724,9 +724,9 @@ So that any user-supplied or environment-misconfigured `CompressionService` surf
 **When** `compress()` is invoked via the Promise or Effect API
 **Then** `result` rejects (Promise) or fails in the typed error channel (Effect) — no unhandled exception (test IDs 11.1-INT-003, 11.1-INT-006)
 
-**Given** a `CompressionService` returning an async rejection
+**Given** a `CompressionService` whose returned `ReadableStream` errors asynchronously when read
 **When** an upload runs
-**Then** the rejection is normalized and produces a typed error (test ID 11.1-INT-005)
+**Then** the stream-error path produces a typed `PartUploadError(0, 0, cause)` (test ID 11.1-INT-005)
 
 **Given** an Effect-typed pipeline with `CompressionServiceLive`
 **When** the upload runs via `.effect`

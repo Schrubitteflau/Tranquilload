@@ -31,7 +31,7 @@ Epic 11 traces ~87 P2 scenarios from `brainstorming-session-2026-05-17-001` (P2 
 
 | Story | Plan | Implemented | Pass-on-CI | Lib finding |
 |---|---:|---:|---:|---|
-| **11.1** Compression & pipeline error paths | 6 tests | **6 ✅** | **6 ✅** | Yes — `compress.ts` wraps sync throws into stream-error path |
+| **11.1** Compression & pipeline error paths | 6 tests | **6 ✅** | **6 ✅** (post-review) | Yes — `compress.ts` wraps sync throws into stream-error path. Code review: 0H/0M/4L; L1+L2 fixed inline. → **done** |
 | **11.2** Layers/logger/cleanup | 18 tests | 0 | 0 | — |
 | **11.3** Resume + reconcile edges | 6 tests | 0 | 0 | — |
 | **11.4** Persona journeys | 7 tests | 0 | 0 | — |
@@ -50,12 +50,12 @@ Epic 11 traces ~87 P2 scenarios from `brainstorming-session-2026-05-17-001` (P2 
 |---|---|---|---|---|
 | **11.1-INT-001** | F#17 — Compression sync throw → `PartUploadError` (no DEFECT) | `packages/tranquilload-core/src/pipeline/compress-error-paths.test.ts:65` | ✅ GREEN | Required lib fix in `compress.ts` (see §4 below) |
 | **11.1-INT-002** | F#18 — Effect-typed pipeline + `CompressionServiceLive` round-trips | `packages/tranquilload-core/src/pipeline/compress-error-paths.test.ts:87` | ✅ GREEN | Round-trips via DecompressionStream |
-| **11.1-INT-003** | F#20 — Absent `globalThis.CompressionStream` → typed error | `packages/tranquilload-core/src/pipeline/compress-error-paths.test.ts:121` | ✅ GREEN | `vi.stubGlobal('CompressionStream', undefined)` |
+| **11.1-INT-003** | F#20 — Truly-absent `globalThis.CompressionStream` (property deleted, `hasOwnProperty === false`) → typed error | `packages/tranquilload-core/src/pipeline/compress-error-paths.test.ts:121` | ✅ GREEN | Post-review fix (L1): switched from `vi.stubGlobal(..., undefined)` to `delete` + setup assertion to genuinely distinguish F#20 from F#73 |
 | **11.1-INT-004** | F#71 — `CompressionService` sync throw normalizes | `packages/tranquilload-core/src/pipeline/compress-error-paths.test.ts:159` | ✅ GREEN | Parametrized w/ INT-005 |
 | **11.1-INT-005** | F#72 — `CompressionService` async rejection normalizes | `packages/tranquilload-core/src/pipeline/compress-error-paths.test.ts:159` | ✅ GREEN | Erroring `ReadableStream.pull` → chunkStream picks up |
 | **11.1-INT-006** | F#73 — Worker-context polyfilled-undefined `CompressionStream` | `packages/tranquilload-core/src/pipeline/compress-error-paths.test.ts:206` | ✅ GREEN | Parity with INT-003; explicit `= undefined` vs missing |
 
-**Story 11.1 coverage: 6/6 = 100% ✅.** Full triptyque (build + vitest + typecheck) green; full repo vitest sweep at 195 tests passing.
+**Story 11.1 coverage: 6/6 = 100% ✅. Code-review gate: PASS** (0 HIGH / 0 MEDIUM / 4 LOW; L1+L2 fixed, L3+L4 informational). Full triptyque (build + vitest + typecheck) green pre- and post-review-fix; full repo vitest sweep at 195 tests passing. Story → **done**.
 
 ---
 
@@ -94,8 +94,8 @@ This section is updated each time a story surfaces a library bug fixed inline (p
 
 ## 5. Gate Decision
 
-**Status:** IN-PROGRESS (1/7 stories landed)
-**Sub-gate for Story 11.1:** ✅ PASS — 6/6 tests green, real lib finding shipped, triptyque green.
+**Status:** IN-PROGRESS (1/7 stories landed → `done`)
+**Sub-gate for Story 11.1:** ✅ PASS — 6/6 tests green, real lib finding shipped, triptyque green, code-review approved (L1+L2 fixed inline, L3+L4 informational), status `done`.
 
 Epic-level gate decision deferred until all 7 stories land. Per `test-design-epic-11.md` § Quality Gate Criteria:
 - All 5 HIGH (Score=6) clusters covered? Story 11.1 covers R-P2-5; R-P2-1/2/3/4 still pending.

@@ -34,7 +34,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-14
-last_updated: 2026-05-22 # updated: story 11.1 → review (bmad-dev-story)
+last_updated: 2026-05-22 # updated: story 11.1 → done (bmad-code-review approved with minor fixes)
 project: Tranquilload
 project_key: NOKEY
 tracking_system: file-system
@@ -125,7 +125,7 @@ development_status:
   # Open decisions (recorded in epics.md): D1 R-P2-4 simpleHttpUpload duplex → codify gap in 11.7;
   #   D2 R-P2-11 CircuitOpen → defer to Epic 12; D3 Story 11.4 personas → commit to stabilization.
   epic-11: in-progress
-  11-1-compression-and-pipeline-error-paths: review
+  11-1-compression-and-pipeline-error-paths: done
   11-2-layers-logger-cleanup-and-resource-safety: ready-for-dev
   11-3-resume-reconcile-and-error-mapping-edges: ready-for-dev
   11-4-persona-journeys-ui-flows: ready-for-dev
