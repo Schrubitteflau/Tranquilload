@@ -54,4 +54,40 @@ describe('networkMultiplier', () => {
     // No valid samples → factor stays 1.0
     expect(m.factor()).toBe(1.0)
   })
+
+  // --- 11.6-INT-016 (F#46) — brand-new instance, zero samples ----------------
+  // Control-side lock for the no-samples path: a freshly-constructed multiplier
+  // returns the documented `1.0` factor (no penalty), independently of any
+  // option overrides. Locks the documented contract that the no-samples branch
+  // is *deterministic* and not subject to drift from option changes.
+  it('11.6-INT-016 (F#46) — brand-new networkMultiplier with no samples returns factor 1.0 (control)', () => {
+    const defaultInstance = networkMultiplier()
+    expect(defaultInstance.factor()).toBe(1.0)
+
+    // Option override does not change the no-samples branch.
+    const customInstance = networkMultiplier({
+      windowSize: 10,
+      targetBytesPerMs: 1,
+    })
+    expect(customInstance.factor()).toBe(1.0)
+  })
+
+  // --- 11.6-INT-017 (F#47) — saturated-slow samples clamp at 0.1 floor -------
+  // 10 consecutive ultra-slow samples (1% of target) — well past the window
+  // size (default 5) — must clamp to the documented floor of 0.1. The window
+  // never lets the factor drop below the floor regardless of how slow samples
+  // get, and the floor remains stable as more samples saturate it. Note the
+  // documented caveat: 0.1 is BELOW S3's 5MiB minimum, so the *caller* must
+  // clamp the chunkSize result; the multiplier itself only enforces 0.1.
+  it('11.6-INT-017 (F#47) — 10 saturated-slow samples clamp at 0.1 floor', () => {
+    const target = 10_000
+    const m = networkMultiplier({ targetBytesPerMs: target })
+
+    // 10 ultra-slow samples (1% of target) — far past the window size.
+    for (let i = 0; i < 10; i++) {
+      m.record(100, 1) // 100 bytes/ms = 1% of target
+    }
+
+    expect(m.factor()).toBe(0.1)
+  })
 })

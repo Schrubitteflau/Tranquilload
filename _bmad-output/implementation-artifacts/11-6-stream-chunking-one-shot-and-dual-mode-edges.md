@@ -1,6 +1,6 @@
 # Story 11.6: Stream/Chunking + One-Shot Edges + Events/Progress Dual-Mode
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -24,55 +24,55 @@ so that all 28 documented surface-area edges from the brainstorming F# block are
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: File layout (AC: all — 28 tests, high count, low cost mean ~0.5h/test)
-  - [ ] Group by domain: `packages/tranquilload-core/src/multipart/chunking-edges.test.ts` (F#24, F#25, F#28, F#42, F#43, F#44), `packages/tranquilload-core/src/oneshot/edges.test.ts` (F#30, F#31, F#37, F#38, F#39), `packages/tranquilload-core/src/progress/getprogress-edges.test.ts` (F#33, F#34, F#35, F#36, F#90), `packages/tranquilload-adapters/src/resilience/network-multiplier.test.ts` (F#46, F#47), `packages/tranquilload-adapters/src/resilience/optimal-part-size.test.ts` (F#50), `packages/tranquilload-adapters/src/sources/*.test.ts` (F#53-F#61)
-  - [ ] Extend existing test files where possible (most of these areas already have a base test suite from Epics 2-8)
+- [x] Task 1: File layout (AC: all — 28 tests, high count, low cost mean ~0.5h/test)
+  - [x] Group by domain: `packages/tranquilload-core/src/multipart/chunking-edges.test.ts` (F#24, F#25, F#28, F#42, F#43, F#44), `packages/tranquilload-core/src/oneshot/edges.test.ts` (F#30, F#31, F#37, F#38, F#39), `packages/tranquilload-core/src/progress/getprogress-edges.test.ts` (F#33, F#34, F#35, F#36, F#90), `packages/tranquilload-adapters/src/resilience/network-multiplier.test.ts` (F#46, F#47), `packages/tranquilload-adapters/src/resilience/optimal-part-size.test.ts` (F#50), `packages/tranquilload-adapters/src/sources/*.test.ts` (F#53-F#61)
+  - [x] Extend existing test files where possible (most of these areas already have a base test suite from Epics 2-8)
 
-- [ ] Task 2: Chunking edges (6 tests, AC: #1)
-  - [ ] 11.6-INT-001 / F#24: zero-byte file → S3 rejects empty parts list; assert `CompleteUploadError`
-  - [ ] 11.6-INT-002 / F#25: source stream errors mid-read → `PartUploadError(0, 0, cause)` with the original cause preserved
-  - [ ] 11.6-INT-003 / F#28: under throttling, count exactly N PUTs in flight; assert N === `maxConcurrency`
-  - [ ] 11.6-INT-013 / F#42: chunkSize=1 byte; assert NO crash, parts count = totalBytes (also surfaces S3 10k part limit at tiny files — capture as Epic 13 candidate if so)
-  - [ ] 11.6-INT-014 / F#43: chunkSize > totalBytes → 1 part, body === whole file
-  - [ ] 11.6-INT-015 / F#44: non-integer chunkSize 1024.7 → either rounded down, rounded to int, or rejected; lock CURRENT behaviour
+- [x] Task 2: Chunking edges (6 tests, AC: #1)
+  - [x] 11.6-INT-001 / F#24: zero-byte file → S3 rejects empty parts list; assert `CompleteUploadError`
+  - [x] 11.6-INT-002 / F#25: source stream errors mid-read → `PartUploadError(0, 0, cause)` with the original cause preserved
+  - [x] 11.6-INT-003 / F#28: under throttling, count exactly N PUTs in flight; assert N === `maxConcurrency`
+  - [x] 11.6-INT-013 / F#42: chunkSize=1 byte; assert NO crash, parts count = totalBytes (also surfaces S3 10k part limit at tiny files — capture as Epic 13 candidate if so)
+  - [x] 11.6-INT-014 / F#43: chunkSize > totalBytes → 1 part, body === whole file
+  - [x] 11.6-INT-015 / F#44: non-integer chunkSize 1024.7 → either rounded down, rounded to int, or rejected; lock CURRENT behaviour
 
-- [ ] Task 3: One-shot edges (5 tests, AC: #2)
-  - [ ] 11.6-INT-004 / F#30: sync `completeUpload: () => ({ ok: true })` (no Promise wrapper) works
-  - [ ] 11.6-INT-005 / F#31: Effect-typed `initiate` that fails → `InitiateUploadError` with `cause` === original typed error
-  - [ ] 11.6-INT-010 / F#37: one-shot abort mid-stream → `AbortError`
-  - [ ] 11.6-INT-011 / F#38: one-shot server returns 4xx → `CompleteUploadError`
-  - [ ] 11.6-INT-012 / F#39: empty stream → either succeeds with empty body or errors; lock behaviour
+- [x] Task 3: One-shot edges (5 tests, AC: #2)
+  - [x] 11.6-INT-004 / F#30: sync `completeUpload: () => ({ ok: true })` (no Promise wrapper) works
+  - [x] 11.6-INT-005 / F#31: Effect-typed `initiate` that fails → `InitiateUploadError` with `cause` === original typed error
+  - [x] 11.6-INT-010 / F#37: one-shot abort mid-stream → `AbortError`
+  - [x] 11.6-INT-011 / F#38: one-shot server returns 4xx → `CompleteUploadError`
+  - [x] 11.6-INT-012 / F#39: empty stream → either succeeds with empty body or errors; lock behaviour
 
-- [ ] Task 4: Events / getProgress dual-mode (6 tests, AC: #3)
-  - [ ] 11.6-INT-006 / F#33: cancel `events` reader mid-upload → no leak (assert upload continues to completion)
-  - [ ] 11.6-INT-007 / F#34: call `getProgress()` BEFORE `initiate` resolves → returns 0
-  - [ ] 11.6-INT-008 / F#35: call `getProgress()` AFTER completion → returns the final value (not 0)
-  - [ ] 11.6-INT-009 / F#36: cause an upload failure; assert `uploadId` promise STILL resolves (not rejected) — codifies that `uploadId` exposure is independent of upload outcome
-  - [ ] 11.6-INT-027 / F#90 (latency lens): don't read the events stream at all; assert upload total wall-time matches the read-events variant (no backpressure stall) — paired with 11.2-INT-017 (cleanup lens)
-  - [ ] 11.6-INT-028 / F#33 variant: cancel events reader BEFORE any event arrives → no leak
+- [x] Task 4: Events / getProgress dual-mode (6 tests, AC: #3)
+  - [x] 11.6-INT-006 / F#33: cancel `events` reader mid-upload → no leak (assert upload continues to completion)
+  - [x] 11.6-INT-007 / F#34: call `getProgress()` BEFORE `initiate` resolves → returns 0
+  - [x] 11.6-INT-008 / F#35: call `getProgress()` AFTER completion → returns the final value (not 0)
+  - [x] 11.6-INT-009 / F#36: cause an upload failure; assert `uploadId` promise STILL resolves (not rejected) — codifies that `uploadId` exposure is independent of upload outcome
+  - [x] 11.6-INT-027 / F#90 (latency lens): don't read the events stream at all; assert upload total wall-time matches the read-events variant (no backpressure stall) — paired with 11.2-INT-017 (cleanup lens)
+  - [x] 11.6-INT-028 / F#33 variant: cancel events reader BEFORE any event arrives → no leak
 
-- [ ] Task 5: `networkMultiplier` + `computeOptimalPartSize` (3 tests, AC: #4, #5)
-  - [ ] 11.6-INT-016 / F#46: brand-new `networkMultiplier` with no samples → factor === 1.0 (control)
-  - [ ] 11.6-INT-017 / F#47: 10 saturated-slow samples → factor === 0.1 (floor — note this is below S3's 5MiB minimum, user must clamp at the call site)
-  - [ ] 11.6-INT-018 / F#50: `computeOptimalPartSize({ totalBytes: 100MB, targetPartCount: 10, minPartSize: 5MB })` → 10MB; pass through `uploadMultipart`; assert each PUT body size === 10MB (last part may be smaller)
+- [x] Task 5: `networkMultiplier` + `computeOptimalPartSize` (3 tests, AC: #4, #5)
+  - [x] 11.6-INT-016 / F#46: brand-new `networkMultiplier` with no samples → factor === 1.0 (control)
+  - [x] 11.6-INT-017 / F#47: 10 saturated-slow samples → factor === 0.1 (floor — note this is below S3's 5MiB minimum, user must clamp at the call site)
+  - [x] 11.6-INT-018 / F#50: `computeOptimalPartSize({ totalBytes: 100MB, targetPartCount: 10, minPartSize: 5MB })` → 10MB; pass through `uploadMultipart`; assert each PUT body size === 10MB (last part may be smaller)
 
-- [ ] Task 6: File / Buffer / Node Readable source edges (8 tests, AC: #6)
-  - [ ] 11.6-INT-019 / F#53: empty `File` (browser); pairs with 11.6-INT-001
-  - [ ] 11.6-INT-020 / F#54: revoke `URL.createObjectURL(file)` mid-read; assert error path
-  - [ ] 11.6-INT-021 / F#55: PNG bytes, UTF-8 text, multi-byte chars → all round-trip
-  - [ ] 11.6-INT-022 / F#57: slow consumer (artificial delay in `uploadPart`) under backpressure → heap stays flat (sample `process.memoryUsage().heapUsed` periodically; the no-monotonic-growth assertion)
-  - [ ] 11.6-INT-023 / F#58: `createReadStream` of `/tmp/does-not-exist`; assert ENOENT propagates as `PartUploadError`
-  - [ ] 11.6-INT-024 / F#59: `Readable.destroy(new Error("boom"))` mid-stream; assert phase-accurate error
-  - [ ] 11.6-INT-025 / F#60: paused Node `Readable` → `Readable.toWeb` auto-resumes; upload completes
-  - [ ] 11.6-INT-026 / F#61: Buffer source; assert no re-allocation (use a sentinel Buffer or `Buffer.byteLength` invariant)
+- [x] Task 6: File / Buffer / Node Readable source edges (8 tests, AC: #6)
+  - [x] 11.6-INT-019 / F#53: empty `File` (browser); pairs with 11.6-INT-001
+  - [x] 11.6-INT-020 / F#54: revoke `URL.createObjectURL(file)` mid-read; assert error path
+  - [x] 11.6-INT-021 / F#55: PNG bytes, UTF-8 text, multi-byte chars → all round-trip
+  - [x] 11.6-INT-022 / F#57: slow consumer (artificial delay in `uploadPart`) under backpressure → heap stays flat (sample `process.memoryUsage().heapUsed` periodically; the no-monotonic-growth assertion)
+  - [x] 11.6-INT-023 / F#58: `createReadStream` of `/tmp/does-not-exist`; assert ENOENT propagates as `PartUploadError`
+  - [x] 11.6-INT-024 / F#59: `Readable.destroy(new Error("boom"))` mid-stream; assert phase-accurate error
+  - [x] 11.6-INT-025 / F#60: paused Node `Readable` → `Readable.toWeb` auto-resumes; upload completes
+  - [x] 11.6-INT-026 / F#61: Buffer source; assert no re-allocation (use a sentinel Buffer or `Buffer.byteLength` invariant)
 
-- [ ] Task 7: Triptyque verification
-  - [ ] `pnpm turbo build` green
-  - [ ] `pnpm vitest run` green (28 new tests)
-  - [ ] `pnpm turbo typecheck` green
+- [x] Task 7: Triptyque verification
+  - [x] `pnpm turbo build` green
+  - [x] `pnpm vitest run` green (28 new tests)
+  - [x] `pnpm turbo typecheck` green
 
-- [ ] Task 8: Traceability update
-  - [ ] Append 11.6-INT-001 → 11.6-INT-028 rows to `_bmad-output/test-artifacts/traceability/traceability-report-epic-11.md`
+- [x] Task 8: Traceability update
+  - [x] Append 11.6-INT-001 → 11.6-INT-028 rows to `_bmad-output/test-artifacts/traceability/traceability-report-epic-11.md`
 
 ## Dev Notes
 
@@ -126,16 +126,48 @@ so that all 28 documented surface-area edges from the brainstorming F# block are
 
 ### Agent Model Used
 
-(to be filled by dev)
+claude-opus-4-7 (Opus 4.7) — per `feedback_code_review_model.md`: Opus for dev AND review.
 
 ### Debug Log References
 
+- `pnpm vitest run` (full repo sweep): 224/224 GREEN (core: 180; adapters: 44).
+- `pnpm turbo build`: green (24 ESM files, ~25KB total in adapters dist).
+- `pnpm turbo typecheck`: green across 5 packages after fixing one `Uint8Array<ArrayBufferLike>` → `BlobPart` cast in `from-file.test.ts` (TS lib variance, runtime-equivalent).
+
 ### Completion Notes List
+
+- **Scope delivered: 29 tests across 28 IDs.** The +1 over the spec count is the F#50 remainder companion: 11.6-INT-018 splits into a *clean-multiple* case (`totalBytes % chunkSize === 0` → all PUT bodies = chunkSize) and a *remainder* case (`!== 0` → last PUT body is the remainder). Same scenario ID, two surface assertions — both lock the round-trip contract.
+- **File layout deviation from Task 1 (justified):** the story's Task 1 places F#30 and F#31 in `oneshot/edges.test.ts`. F#30 (`completeUpload`) and F#31 (`initiate`) are *multipart* APIs — the one-shot path has no `completeUpload`/`initiate`. Created `multipart/dual-mode-edges.test.ts` to host F#30 + F#31 alongside the other multipart edges; `oneshot/edges.test.ts` carries only the genuinely one-shot cases (F#37 / F#38 / F#39). Test boundary remains clean; traceability §2.6 reflects the actual paths.
+- **No lib finding.** All 28 IDs lock existing behaviour. The defect-safe-user-boundary pattern (`safeLog`, `compress()` from 11.1) was *probed* by F#25 (mid-read source error) and F#59 (`Readable.destroy(err)`) — both already propagate cleanly via `chunkStream`'s `Stream.mapError`, so no new boundary wrap was needed.
+- **Surgical-test discipline applied.** Every defect-refusal test asserts `Cause.dieOption(exit.cause)._tag === "None"` AND `Chunk.size(Cause.defects(exit.cause)) === 0` — refusing fiber defects, mirroring Story 11.1 / 10.1-INT-013.
+- **F#N prefix convention honored** — every new test description starts with `11.6-INT-NNN (F#NN) — ...` matching brainstorming-session-2026-05-17-001.
+- **F#42 → Epic 13 candidate** (already flagged): chunkSize=1 on a multi-GB upload would exceed S3's 10k-part limit. Caller-side validation belongs to Epic 13.
+- **F#44 → Epic 13 candidate** (already flagged): non-integer `chunkSize` (e.g. 1024.7) silently truncates via `Uint8Array.slice`'s ToIntegerOrInfinity coercion + compares as float. Locked CURRENT behaviour; a future API-boundary rejection is Epic 13.
+- **F#39 → Epic 13 candidate** (already flagged): one-shot empty stream emits `UploadCompleted(totalParts: 1)` — a future stricter empty-stream policy is Epic 13.
+- **Heap-stability lens (F#57)** uses a tolerant `last < first × 2 + 5MB` floor to absorb Node-internals noise; runs without `--expose-gc` (the helper falls back gracefully). The *exact* bound is locked separately by Story 11.2's PW-Lib heap test (11.2-E2E-001).
+- **Triptyque green pre-review.** Ready for Opus → Opus code review per `feedback_code_review_model.md`.
 
 ### Change Log
 
+- **2026-05-22 (dev):** Story 11.6 dev landed. 4 new test files + 4 extended test files; 29 net-new tests; 0 lib changes; traceability report §2.6 added + §1 totals bumped (6 → 35). Status: ready-for-dev → review.
+
 ### File List
+
+- New:
+  - `packages/tranquilload-core/src/multipart/chunking-edges.test.ts` (6 tests: 11.6-INT-001/002/003/013/014/015)
+  - `packages/tranquilload-core/src/multipart/dual-mode-edges.test.ts` (2 tests: 11.6-INT-004/005)
+  - `packages/tranquilload-core/src/oneshot/edges.test.ts` (3 tests: 11.6-INT-010/011/012)
+  - `packages/tranquilload-core/src/progress/getprogress-edges.test.ts` (6 tests: 11.6-INT-006/007/008/009/027/028)
+- Modified (extended):
+  - `packages/tranquilload-adapters/src/resilience/network-multiplier.test.ts` (+2 tests: 11.6-INT-016/017)
+  - `packages/tranquilload-adapters/src/resilience/optimal-part-size.test.ts` (+2 tests: 11.6-INT-018 clean + remainder)
+  - `packages/tranquilload-adapters/src/sources/from-file.test.ts` (+4 tests: 11.6-INT-019/020/021/022)
+  - `packages/tranquilload-adapters/src/sources/from-node-readable.test.ts` (+4 tests: 11.6-INT-023/024/025/026)
+- Updated (artifact):
+  - `_bmad-output/test-artifacts/traceability/traceability-report-epic-11.md` (§2.6 + §3.2 + §1 totals + §5 gate decision)
+  - `_bmad-output/implementation-artifacts/sprint-status.yaml` (story key → in-progress, will be → review at close)
+  - `_bmad-output/implementation-artifacts/11-6-stream-chunking-one-shot-and-dual-mode-edges.md` (Tasks → [x]; Dev Agent Record filled; Status → review)
 
 ## Senior Developer Review (AI)
 
-(to be filled at review time)
+(to be filled at review time — recommended Opus → Opus per `feedback_code_review_model.md`)
