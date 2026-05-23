@@ -27,28 +27,53 @@ const slowStream = (chunkCount: number, chunkSize: number, delayMs = 5): Readabl
 
 describe("uploadMultipart — events / getProgress dual-mode edges (Story 11.6)", () => {
   // --- 11.6-INT-006 (F#33) — cancel events reader mid-upload -----------------
-  // The events ReadableStream is a downstream consumer view over an internal
-  // `collected` Promise. Cancelling the reader mid-upload must NOT affect the
-  // upload: `result` still resolves with UploadCompleted, getProgress() still
-  // reflects final bytes. The cancellation only closes the reader's view.
+  // The events ReadableStream is buffered: its `start()` does `await collected`
+  // BEFORE enqueueing anything (see `multipart/index.ts:173`). So a naive
+  // `reader.read()` would block until the upload is fully done — turning a
+  // "mid-upload cancel" test into a "post-upload cancel" no-op.
+  //
+  // Genuine mid-upload assertion: gate `uploadPart` for the first part so the
+  // upload is provably in flight (we wait on `partStartedPromise`), THEN cancel
+  // the reader, THEN release the gate. The fact that `result` still resolves
+  // proves the cancellation did not interrupt the upload fiber. Code-review
+  // M1 (Story 11.6, 2026-05-23) — addresses Codex finding.
   it.effect(
-    "11.6-INT-006 (F#33) — cancel events reader mid-upload: result still resolves, no leak",
+    "11.6-INT-006 (F#33) — cancel events reader WHILE upload is in flight: result still resolves",
     () =>
       Effect.gen(function* () {
+        let resolvePartStarted!: () => void
+        const partStartedPromise = new Promise<void>((r) => {
+          resolvePartStarted = r
+        })
+        let releaseGate!: () => void
+        const gate = new Promise<void>((r) => {
+          releaseGate = r
+        })
+
         const { events, result, getProgress } = uploadMultipart({
-          stream: slowStream(4, 10, 5), // 40 bytes total, slow enough to cancel mid-stream
+          stream: slowStream(4, 10, 1), // 40 bytes total
           chunkSize: 10,
-          uploadPart: () => "etag",
+          uploadPart: async (n) => {
+            if (n === 1) {
+              resolvePartStarted()
+              await gate
+            }
+            return `etag-${n}`
+          },
           completeUpload: () => {},
         })
 
+        // Wait until uploadPart(1) has actually started — proves "mid-upload".
+        yield* Effect.promise(() => partStartedPromise)
+
+        // Cancel the reader while upload is provably in flight.
         const reader = events.getReader()
-        // Read one event to confirm the stream is producing, then cancel.
-        const first = yield* Effect.promise(() => reader.read())
-        expect(first.done).toBe(false)
         yield* Effect.promise(() => reader.cancel())
 
-        // Upload completes regardless of cancelled consumer.
+        // Release the gate so the upload can complete.
+        releaseGate()
+
+        // Upload completes despite the cancelled consumer.
         const res = yield* Effect.promise(() => result)
         expect(res._tag).toBe("UploadCompleted")
         expect(res.totalParts).toBe(4)
@@ -60,27 +85,41 @@ describe("uploadMultipart — events / getProgress dual-mode edges (Story 11.6)"
   )
 
   // --- 11.6-INT-007 (F#34) — getProgress() (Promise form) before initiate ----
-  // The existing F#34 test (getprogress.test.ts) locks the Effect form via
-  // `getProgress.effect`. This locks the Promise form: calling `getProgress()`
-  // synchronously after `uploadMultipart()` returns (before `await result`)
-  // returns 0 bytes — the upload has not consumed any input yet. The function
-  // form must NOT block on or launch the upload.
+  // F#34's scenario requires a genuine `initiate` boundary — calling
+  // `getProgress()` BEFORE initiate resolves must return 0. The earlier version
+  // of this test omitted `initiate`, removing the boundary it claimed to lock.
+  //
+  // Genuine assertion: provide a GATED `initiate` callback, call `getProgress()`
+  // while initiate is still pending, assert 0, then release the gate and assert
+  // the final value flows through. Code-review M2 (Story 11.6, 2026-05-23) —
+  // addresses Codex finding.
   it.effect(
-    "11.6-INT-007 (F#34) — getProgress() Promise form returns 0 bytes before initiate completes",
+    "11.6-INT-007 (F#34) — getProgress() Promise form returns 0 bytes while initiate is pending",
     () =>
       Effect.gen(function* () {
+        let releaseInitiate!: () => void
+        const initiateGate = new Promise<void>((r) => {
+          releaseInitiate = r
+        })
+
         const { result, getProgress } = uploadMultipart({
           stream: fromBytes(new Uint8Array(25).fill(1)),
           chunkSize: 25,
+          initiate: async () => {
+            await initiateGate
+            return { uploadId: "the-upload-id" }
+          },
           uploadPart: () => "etag",
           completeUpload: () => {},
           totalBytes: 25,
         })
 
-        // Promise-form call BEFORE awaiting result — must NOT launch the
-        // upload; must return 0 bytes synchronously after init.
+        // Promise-form call BEFORE initiate resolves — must return 0 bytes.
         const before = yield* Effect.promise(() => getProgress())
         expect(before.bytesUploaded).toBe(0)
+
+        // Release initiate so the upload can proceed.
+        releaseInitiate()
 
         yield* Effect.promise(() => result)
 

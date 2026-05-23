@@ -36,7 +36,7 @@ Epic 11 traces ~87 P2 scenarios from `brainstorming-session-2026-05-17-001` (P2 
 | **11.3** Resume + reconcile edges | 6 tests | 0 | 0 | — |
 | **11.4** Persona journeys | 7 tests | 0 | 0 | — |
 | **11.5** Chaos cluster | 13 tests | 0 | 0 | — |
-| **11.6** Stream/chunking/dual-mode | 28 tests | **29 ✅** (28 IDs; 11.6-INT-018 split into clean + remainder lock) | **29 ✅** (pre-review) | None — pure surface-area locks; all 28 IDs covered with no lib change. → **review** |
+| **11.6** Stream/chunking/dual-mode | 28 tests | **29 ✅** (28 IDs; 11.6-INT-018 split into clean + remainder lock) | **29 ✅** (post-review) | None — pure surface-area locks; all 28 IDs covered with no lib change. Codex review: 0H/4M/1L, all 5 fixed inline (test-design rigor only). → **done** |
 | **11.7** Cross-browser + DIST + DOC | 11 tests | 0 | 0 | — |
 | **TOTAL** | 89 (87 + 2 dup) | 35 (39%) | 35 | 1 lib finding so far |
 
@@ -91,7 +91,7 @@ Epic 11 traces ~87 P2 scenarios from `brainstorming-session-2026-05-17-001` (P2 
 | **11.6-INT-025** | F#60 — Paused Readable auto-resumes via `Readable.toWeb` | `packages/tranquilload-adapters/src/sources/from-node-readable.test.ts:118` | ✅ GREEN | Confirms adapter does not require caller-side flow control |
 | **11.6-INT-026** | F#61 — Buffer source: byteLength invariant preserved end-to-end | `packages/tranquilload-adapters/src/sources/from-node-readable.test.ts:144` | ✅ GREEN | byteLength + content invariants; avoids over-binding storage identity |
 
-**Story 11.6 coverage: 29/28 = 100%+ ✅ (clean + remainder split on 11.6-INT-018).** Triptyque (build + vitest 224 tests + typecheck) green; no lib fix surfaced — all 28 IDs are pure surface-area locks. Status → **review**.
+**Story 11.6 coverage: 29/28 = 100%+ ✅ (clean + remainder split on 11.6-INT-018).** Triptyque (build + vitest 224 tests + typecheck) green pre- AND post-code-review. No lib fix surfaced — all 28 IDs are pure surface-area locks. **Codex code-review (2026-05-23): 0 HIGH / 4 MEDIUM / 1 LOW; all 5 addressed inline** (test-design rigor only — M1/M2 reworked to use gated callbacks for genuine timing boundaries; M3 reframed as URL-independence since Node `Blob.stream` is single-chunk regardless of size; M4 switched INT-023+INT-024 to surgical defect-refusal pattern using `Effect.runPromiseExit` + `Cause.dieOption`/`Cause.defects`; L1 tightened F#61 scope-note wording). Status → **done**.
 
 ---
 
@@ -164,9 +164,9 @@ This section is updated each time a story surfaces a library bug fixed inline (p
 
 ## 5. Gate Decision
 
-**Status:** IN-PROGRESS (2/7 stories landed; 11.1 `done`, 11.6 `review` pending code-review)
+**Status:** IN-PROGRESS (2/7 stories landed `done`)
 **Sub-gate for Story 11.1:** ✅ PASS — 6/6 tests green, real lib finding shipped, triptyque green, code-review approved (L1+L2 fixed inline, L3+L4 informational), status `done`.
-**Sub-gate for Story 11.6:** ✅ PASS (pre-review) — 29/28 tests green (the +1 is the F#50 remainder companion), triptyque green (build + 224 tests + typecheck), no lib fix needed, status `review`.
+**Sub-gate for Story 11.6:** ✅ PASS — 29/28 tests green, triptyque green pre- AND post-Codex-review (build + 224 tests + typecheck), no lib fix needed, code-review 0H/4M/1L with all 5 addressed inline, status `done`.
 
 Epic-level gate decision deferred until all 7 stories land. Per `test-design-epic-11.md` § Quality Gate Criteria:
 - All 5 HIGH (Score=6) clusters covered? Story 11.1 covers R-P2-5; R-P2-1/2/3/4 still pending.
@@ -179,4 +179,4 @@ Epic-level gate decision deferred until all 7 stories land. Per `test-design-epi
 
 ## 6. Next Update
 
-After Story 11.6 code-review lands `done`, suggested next: Story 11.2 (Layers/logger/cleanup) — covers R-P2-2 (HIGH) with 17 VT + 1 PW-Lib heap test. When 11.2 lands, update §1 totals, append §2.2 with 11.2-INT-001 → 11.2-INT-017 + 11.2-E2E-001, and append §4 with any new lib finding.
+Suggested next: Story 11.2 (Layers/logger/cleanup) — covers R-P2-2 (HIGH) with 17 VT + 1 PW-Lib heap test. The heap test pairs with Story 11.6's `11.6-INT-022` (F#57 Node-side heap-flat lens) for full coverage. When 11.2 lands, update §1 totals, append §2.2 with 11.2-INT-001 → 11.2-INT-017 + 11.2-E2E-001, and append §4 with any new lib finding.

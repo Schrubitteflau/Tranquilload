@@ -53,17 +53,29 @@ describe('fromFile', () => {
     expect(first.value).toBeUndefined()
   })
 
-  // --- 11.6-INT-020 (F#54) — blob URL revoked mid-read ------------------------
-  // `fromFile` reads via `file.stream()`, which derives its bytes from the
-  // File's internal Blob storage — NOT from a blob URL. Revoking a blob URL
-  // for the same File while a read is in flight must therefore have zero
-  // effect on the stream. Locks that contract.
-  it('11.6-INT-020 (F#54) — revoking a blob URL mid-read does NOT affect fromFile stream', async () => {
-    const bytes = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8])
+  // --- 11.6-INT-020 (F#54) — blob URL revocation is independent of fromFile --
+  // **Scope note** (code-review M3, Story 11.6, 2026-05-23): F#54's
+  // brainstorming wording was "blob URL revoked mid-read". On Node ≥ 22 (and
+  // empirically up through Node 24), `File.stream()` returns the entire blob
+  // in a single chunk regardless of size, so genuine *mid-read* timing is not
+  // observable from a vitest harness. Instead this test locks the load-bearing
+  // contract: **`fromFile(file)` is URL-independent** — `file.stream()` reads
+  // from the File's internal Blob storage, NOT from a blob URL, so revoking
+  // the URL has zero effect on the stream regardless of read timing.
+  //
+  // Assertion shape:
+  //   1. Pre-revoke read: stream is active, first chunk arrives.
+  //   2. Revoke the URL.
+  //   3. Post-revoke drain: byte-fidelity preserved end-to-end.
+  // If a future fromFile change introduced URL coupling (e.g. via
+  // `URL.createObjectURL(file)` internally), step 3 would surface the break.
+  it('11.6-INT-020 (F#54) — fromFile(file) is URL-independent: URL.revokeObjectURL has no effect', async () => {
+    const bytes = new Uint8Array(64)
+    for (let i = 0; i < bytes.length; i++) bytes[i] = i % 251
     const file = new File([bytes], 'data.bin')
 
     // Create and revoke a blob URL for the same file — the URL is an
-    // independent identifier; fromFile bypasses it entirely.
+    // independent identifier; fromFile must bypass it entirely.
     const url = URL.createObjectURL(file)
 
     const { stream } = fromFile(file)
@@ -72,12 +84,13 @@ describe('fromFile', () => {
     // First read kicks off the source consumption.
     const first = await reader.read()
     expect(first.done).toBe(false)
+    expect(first.value).toBeDefined()
 
-    // Revoke the URL mid-read — must NOT break the in-flight stream.
+    // Revoke the URL — must NOT propagate into the active stream.
     URL.revokeObjectURL(url)
 
-    // Drain remaining bytes; byte-fidelity preserved.
-    const chunks: Uint8Array[] = first.value ? [first.value] : []
+    // Continue draining; byte-fidelity preserved regardless of revoke.
+    const chunks: Uint8Array[] = [first.value!]
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
@@ -85,6 +98,7 @@ describe('fromFile', () => {
     }
 
     const total = chunks.reduce((sum, c) => sum + c.length, 0)
+    expect(total).toBe(bytes.length)
     const reconstructed = new Uint8Array(total)
     let offset = 0
     for (const c of chunks) {

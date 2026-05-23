@@ -1,6 +1,6 @@
 # Story 11.6: Stream/Chunking + One-Shot Edges + Events/Progress Dual-Mode
 
-Status: review
+Status: done
 
 ## Story
 
@@ -150,6 +150,7 @@ claude-opus-4-7 (Opus 4.7) — per `feedback_code_review_model.md`: Opus for dev
 ### Change Log
 
 - **2026-05-22 (dev):** Story 11.6 dev landed. 4 new test files + 4 extended test files; 29 net-new tests; 0 lib changes; traceability report §2.6 added + §1 totals bumped (6 → 35). Status: ready-for-dev → review.
+- **2026-05-23 (code-review fixes):** Codex review returned 0H/4M/1L. All 4 MEDIUM + the 1 LOW addressed inline (test-design rigor only, no lib change). Triptyque green pre- and post-review-fix (build + 224 vitest + typecheck). Status: review → done. See § Senior Developer Review (AI).
 
 ### File List
 
@@ -170,4 +171,58 @@ claude-opus-4-7 (Opus 4.7) — per `feedback_code_review_model.md`: Opus for dev
 
 ## Senior Developer Review (AI)
 
-(to be filled at review time — recommended Opus → Opus per `feedback_code_review_model.md`)
+**Reviewer:** Codex (OpenAI) — external second opinion, deliberate divergence from the `feedback_code_review_model.md` Opus→Opus preference for this story to stress-test the test-design rigor with a different model family.
+**Review date:** 2026-05-23
+**Verdict:** 0 HIGH · 4 MEDIUM · 1 LOW. All MEDIUM + LOW addressed inline; no lib code touched (the entire review surface was test-design rigor).
+
+### Findings and resolutions
+
+#### M1 — 11.6-INT-006 (F#33) — claimed "mid-upload" was actually "post-upload"
+
+**Codex finding:** `multipart/index.ts:173` builds `events` as a buffered `ReadableStream` whose `start()` does `await collected` BEFORE enqueueing any event. The original test called `reader.read()` and got back an event — but that read only resolves AFTER the upload is complete, making the subsequent cancellation post-upload-no-op.
+
+**Verification:** Confirmed by re-reading `index.ts:173-185`. The events stream is a final dump, not a live pipe.
+
+**Fix:** Refactored to gate `uploadPart(1)` so the upload is provably in flight (we await `partStartedPromise`), THEN cancel the reader, THEN release the gate. The test now genuinely locks "cancellation during in-flight upload does not interrupt the upload fiber". `progress/getprogress-edges.test.ts:31`.
+
+#### M2 — 11.6-INT-007 (F#34) — missing `initiate` boundary
+
+**Codex finding:** F#34's scenario name is "before initiate" — but the test omitted the `initiate` callback. With no initiate, there's no "before initiate" boundary to be on the wrong side of; the test only locked "immediately after `uploadMultipart()` returns".
+
+**Verification:** Confirmed — `uploadMultipart` only runs the initiate branch when `initiate` is provided.
+
+**Fix:** Added a gated `initiate` callback (Promise gate held open). The test now calls `getProgress()` while initiate is PROVABLY pending, asserts 0, then releases the gate. `progress/getprogress-edges.test.ts:71`.
+
+#### M3 — 11.6-INT-020 (F#54) — 8-byte file → single chunk → revoke is post-drain
+
+**Codex finding:** With an 8-byte file, `Blob.stream()` returns the entire content in one chunk; the first `reader.read()` drains everything, and `URL.revokeObjectURL()` then runs after the stream is already finished. "Mid-read" is observationally vacuous.
+
+**Verification:** Probed Node directly (`File.stream()` on 200KB / 1MB / 2MB / 4MB → still 1 chunk on Node ≥ 22). Genuine mid-read timing is NOT achievable from a vitest harness on this platform.
+
+**Fix:** Reframed the test as **URL-independence for `fromFile(file)`** (Codex's other suggested option). The contract being locked is "`fromFile` reads from internal Blob storage, NOT from a blob URL — so revocation is decoupled from the stream regardless of timing". A future change introducing URL coupling would surface the break via the byte-fidelity assertion. Test title + comment updated to reflect this narrower lock honestly. `sources/from-file.test.ts:74`.
+
+#### M4 — 11.6-INT-024 (F#59) + 11.6-INT-023 (F#58) — missing surgical defect-refusal
+
+**Codex finding:** Both tests caught failures via the public `result` Promise. `Cause.squash` (called in `index.ts:154`) can mask a defect by surfacing it as a generic Error — `instanceof PartUploadError` would pass for a future regression that wraps a defect into a PartUploadError-shaped exception. This violates the surgical-test discipline (precedent: `compress-error-paths.test.ts:35` + Story 11.1 + 10.1-INT-013).
+
+**Verification:** Confirmed by reading `multipart/index.ts:154` and recalling the helper in `pipeline/compress-error-paths.test.ts`. The risk is real, not theoretical.
+
+**Fix:** Refactored BOTH tests (Codex's "consider the same treatment for 11.6-INT-023" suggestion applied) to use `uploadMultipart.effect` + `Stream.runCollect` + `Effect.runPromiseExit`, then assert `Cause.dieOption._tag === "None"` + `Chunk.size(Cause.defects) === 0` + typed `PartUploadError(0, 0, cause)`. Extracted a local `expectPartUploadError` helper to mirror the precedent. `sources/from-node-readable.test.ts:46`.
+
+#### L1 — 11.6-INT-026 (F#61) — "no realloc" wording overpromises
+
+**Codex finding:** Brainstorming F#61 says "no re-allocation", but the test only locks byteLength + content. Traceability should not imply allocation behavior is tested.
+
+**Verification:** Test comment and `it()` title already said "byteLength invariant"; the traceability row already used "byteLength invariant". The actual mismatch was the gap between brainstorming wording (overpromise) and test scope (honest, narrower lock).
+
+**Fix:** Tightened the comment to a "**Scope note**" that explicitly calls out the brainstorming-wording mismatch and explains *why* (storage-sharing identity would over-bind Node `Readable.toWeb` internals across versions). Added "narrower than 'no realloc'" parenthetical to the `it()` title for searchability. A strict allocation check is now a flagged Epic 13 candidate. `sources/from-node-readable.test.ts:171`.
+
+### Post-fix triptyque
+
+- `pnpm turbo build`: ✅ green (5 packages)
+- `pnpm -r test`: ✅ 224/224 GREEN (core 180 + adapters 44)
+- `pnpm turbo typecheck`: ✅ green (5 packages)
+
+### Gate decision
+
+**Approved.** All MEDIUM findings addressed inline with proper verification; L1 polished. Zero lib code changes — the review surface was entirely test-design rigor. The four code-review fixes strengthen Story 11.6's locks against future regressions (the M1/M2 gated-callback patterns and M4 surgical defect-refusal pattern are reusable templates for future stories). Story 11.6 → **done**.
