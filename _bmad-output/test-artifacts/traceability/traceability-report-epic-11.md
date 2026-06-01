@@ -1,7 +1,7 @@
 ---
 stepsCompleted: ['step-01-load-context', 'step-02-discover-tests', 'step-03-map-criteria']
 lastStep: 'step-03-map-criteria'
-lastSaved: '2026-05-22'
+lastSaved: '2026-05-23'
 mode: 'create'
 scope: 'Epic 11 — P2 Nightly Coverage (per-story rollup; updated as stories land)'
 sources:
@@ -9,12 +9,12 @@ sources:
   - '_bmad-output/brainstorming/brainstorming-session-2026-05-17-001.md'
   - '_bmad-output/planning-artifacts/epics.md'
 artifacts:
-  vitest_test_files_added_this_epic: 5   # +1 with 11.1; +4 with 11.6 (chunking-edges, dual-mode-edges, oneshot/edges, getprogress-edges)
-  playwright_spec_files_added_this_epic: 0
+  vitest_test_files_added_this_epic: 10   # +1 with 11.1; +4 with 11.6; +5 with 11.2 (cleanup, layers-composition, compression-service-edges, termination-edges, testclock-schedule) + extensions to logger-service-integration
+  playwright_spec_files_added_this_epic: 1 # +1 with 11.2 (cleanup-heap-stability)
   brainstorming_p2_scenarios: 87
-stories_landed: ['11.1', '11.6']
-stories_pending: ['11.2', '11.3', '11.4', '11.5', '11.7']
-gate_decision: 'IN-PROGRESS (2/7 stories landed)'
+stories_landed: ['11.1', '11.2', '11.6']
+stories_pending: ['11.3', '11.4', '11.5', '11.7']
+gate_decision: 'IN-PROGRESS (3/7 stories landed)'
 ---
 
 # Requirements Traceability — Epic 11 (P2 Nightly Coverage)
@@ -32,13 +32,13 @@ Epic 11 traces ~87 P2 scenarios from `brainstorming-session-2026-05-17-001` (P2 
 | Story | Plan | Implemented | Pass-on-CI | Lib finding |
 |---|---:|---:|---:|---|
 | **11.1** Compression & pipeline error paths | 6 tests | **6 ✅** | **6 ✅** (post-review) | Yes — `compress.ts` wraps sync throws into stream-error path. Code review: 0H/0M/4L; L1+L2 fixed inline. → **done** |
-| **11.2** Layers/logger/cleanup | 18 tests | 0 | 0 | — |
+| **11.2** Layers/logger/cleanup | 18 tests | **18 ✅** (17 VT + 1 PW-Lib) | **18 ✅** | None — all 5 R-P2-2 HIGH-cluster tests passed against current lib on first run (ATDD red phase). 13 LOCK tests added on top. → **done** |
 | **11.3** Resume + reconcile edges | 6 tests | 0 | 0 | — |
 | **11.4** Persona journeys | 7 tests | 0 | 0 | — |
 | **11.5** Chaos cluster | 13 tests | 0 | 0 | — |
 | **11.6** Stream/chunking/dual-mode | 28 tests | **29 ✅** (28 IDs; 11.6-INT-018 split into clean + remainder lock) | **29 ✅** (post-review) | None — pure surface-area locks; all 28 IDs covered with no lib change. Codex review: 0H/4M/1L, all 5 fixed inline (test-design rigor only). → **done** |
 | **11.7** Cross-browser + DIST + DOC | 11 tests | 0 | 0 | — |
-| **TOTAL** | 89 (87 + 2 dup) | 35 (39%) | 35 | 1 lib finding so far |
+| **TOTAL** | 89 (87 + 2 dup) | 53 (60%) | 53 | 1 lib finding so far |
 
 ---
 
@@ -56,6 +56,31 @@ Epic 11 traces ~87 P2 scenarios from `brainstorming-session-2026-05-17-001` (P2 
 | **11.1-INT-006** | F#73 — Worker-context polyfilled-undefined `CompressionStream` | `packages/tranquilload-core/src/pipeline/compress-error-paths.test.ts:206` | ✅ GREEN | Parity with INT-003; explicit `= undefined` vs missing |
 
 **Story 11.1 coverage: 6/6 = 100% ✅. Code-review gate: PASS** (0 HIGH / 0 MEDIUM / 4 LOW; L1+L2 fixed, L3+L4 informational). Full triptyque (build + vitest + typecheck) green pre- and post-review-fix; full repo vitest sweep at 195 tests passing. Story → **done**.
+
+### 2.2 — Story 11.2 (R-P2-2 HIGH + R-P2-8 MEDIUM, 18 tests)
+
+| Test ID | Brainstorming origin | Spec path | Status | Notes |
+|---|---|---|---|---|
+| **11.2-INT-001** | F#65 — Recording-logger captures exact log-line sequence | `packages/tranquilload-core/src/services/logger-service-integration.test.ts:174` | ✅ GREEN | Extends Story 10.1 file; locks 3-part lifecycle order + level |
+| **11.2-INT-002** | F#67 — Slow async logger does not scale upload latency | `packages/tranquilload-core/src/services/logger-service-integration.test.ts:202` | ✅ GREEN | Plain `it` (real Clock); `safeLog` fire-and-forget contract |
+| **11.2-INT-003** | F#68 — Default `CompressionServiceLive` resolves on Node 22+ | `packages/tranquilload-core/src/services/compression-service-edges.test.ts:51` | ✅ GREEN | Node-side; browser-side covered by 10.4-E2E-005 (PW-Lib) |
+| **11.2-INT-004** | F#69 — No-op CompressionService → size invariant | `packages/tranquilload-core/src/services/compression-service-edges.test.ts:74` | ✅ GREEN | Proves injection overrides default |
+| **11.2-INT-005** | F#70 — Malformed CompressionService → corrupt object (trust boundary) | `packages/tranquilload-core/src/services/compression-service-edges.test.ts:115` | ✅ GREEN | Codifies no-checksum contract; Epic 13 candidate: optional ingest checksum |
+| **11.2-INT-006** | F#75 — Custom `[upload:${id}]` prefix on every log line | `packages/tranquilload-core/src/services/logger-service-integration.test.ts:251` | ✅ GREEN | Public LoggerService injection point sufficient for per-upload tagging |
+| **11.2-INT-007** | F#76 — `Layer.empty` → defect carries missing-service info | `packages/tranquilload-core/src/services/layers-composition.test.ts:42` | ✅ GREEN | Surgical defect-refusal inverted (we EXPECT a defect here) |
+| **11.2-INT-008** | F#78 — `Schedule.exponential` via TestClock canonical pattern | `packages/tranquilload-core/src/multipart/testclock-schedule.test.ts:36` | ✅ GREEN | Canonical `it.effect` + `Effect.fork` + `TestClock.adjust` reference |
+| **11.2-INT-009** | F#79 — `Layer.merge(Default, Override)` last-writer-wins | `packages/tranquilload-core/src/services/layers-composition.test.ts:90` | ✅ GREEN | `Layer.merge` is the right composition primitive (NOT pipe of provideLayer — that's first-writer-wins) |
+| **11.2-INT-010** | F#80 — User Layer.scoped finalizer exactly-once across success/error/abort | `packages/tranquilload-core/src/multipart/cleanup.test.ts:50` | ✅ GREEN | ATDD red phase; gated callback for abort path |
+| **11.2-INT-011** | F#81 — Concurrent uploads sharing one `Effect.provide` build the Layer once | `packages/tranquilload-core/src/services/layers-composition.test.ts:136` | ✅ GREEN | `Effect.suspend` per branch to give each upload its own ReadableStream |
+| **11.2-INT-012** | F#83 — Source `ReadableStream.cancel` invoked on terminal uploadPart error | `packages/tranquilload-core/src/multipart/cleanup.test.ts:138` | ✅ GREEN | ATDD red phase; surgical defect-refusal |
+| **11.2-INT-013** | F#85 — Pipeline mid-stream error cancels upstream source via `pipeThrough` | `packages/tranquilload-core/src/multipart/cleanup.test.ts:191` | ✅ GREEN | ATDD red phase; manual erroring TransformStream |
+| **11.2-INT-014** | F#86 — TCP RST mid-PUT → `PartUploadError`, no hang | `packages/tranquilload-core/src/multipart/termination-edges.test.ts:42` | ✅ GREEN | Loopback `node:net` server that destroys connection; wall-clock < 5s |
+| **11.2-INT-015** | F#87 — Tab-close approximation: orphan multipart (current behaviour) | `packages/tranquilload-core/src/multipart/termination-edges.test.ts:97` | ✅ GREEN | Epic 13 candidate: auto-abort orphan on unhandled close |
+| **11.2-INT-016** | F#88 — Semaphore permit released on terminal error | `packages/tranquilload-core/src/multipart/cleanup.test.ts:264` | ✅ GREEN | ATDD red phase; wall-clock-settlement + `running===0` lock |
+| **11.2-INT-017** | F#90 (cleanup lens) — Unread events stream closes cleanly | `packages/tranquilload-core/src/multipart/cleanup.test.ts:374` | ✅ GREEN | Pairs with 11.6-INT-027 (latency lens); no dangling controller |
+| **11.2-E2E-001** | F#84 — 100 sequential uploads → flat heap on Chromium | `tests/e2e/lib/cleanup-heap-stability.spec.ts:35` | ✅ GREEN | ATDD red phase; bench harness at `examples/test-app/bench.{html,ts}` exposes `window.__tlBench__`; ≤ 1.5× heap ratio |
+
+**Story 11.2 coverage: 18/18 = 100% ✅.** ATDD red phase exercised the 5 R-P2-2 HIGH-cluster tests (INT-010/012/013/016/E2E-001) before dev — **all 5 PASSED on first run against the current lib**, confirming the cleanup/resource-safety contract is already met. Same outcome shape as Story 11.6: no lib change, pure surface-area locks. Triptyque (build + vitest 197 core + 44 adapters + PW-Lib heap + typecheck) green. Two reusable patterns flagged inline: (1) `@effect/vitest` `it.effect` injects TestClock → tests with wall-clock `setTimeout` synchronization must use plain vitest `it` + `Effect.runPromise`; (2) `Layer.merge(Default, Override)` is the last-writer-wins primitive — chained `provideLayer` is first-writer-wins. Story → **done** (pending code-review).
 
 ### 2.6 — Story 11.6 (R-P2-7 MEDIUM + R-P2-13 LOW, 29 tests)
 
@@ -142,9 +167,34 @@ Epic 11 traces ~87 P2 scenarios from `brainstorming-session-2026-05-17-001` (P2 
 
 **Story 11.6 coverage: 29/28 = 100%+ ✅** (the +1 is the F#50 remainder companion lock; same scenario ID, two assertions).
 
-### 3.3 — R-P2-1 / R-P2-2 / R-P2-3 / R-P2-4 / R-P2-6+ — NOT YET COVERED
+### 3.3 — R-P2-2 / R-P2-8 — STORY 11.2 COVERAGE
 
-All other HIGH/MEDIUM/LOW P2 risks remain pending Stories 11.2 / 11.3 / 11.4 / 11.5 / 11.7. See `test-design-epic-11.md` § Coverage Matrix for the full scope.
+| Scenario | Covered by (live) | Planned (gap) |
+|---|---|---|
+| **F#65** Recording-logger lifecycle sequence | `services/logger-service-integration.test.ts` **11.2-INT-001** ✅ | — |
+| **F#67** Slow async logger does not scale latency | `services/logger-service-integration.test.ts` **11.2-INT-002** ✅ | — |
+| **F#68** Default `CompressionServiceLive` works in browser + Node | `services/compression-service-edges.test.ts` **11.2-INT-003** ✅ (Node side) + `tests/e2e/lib/deflate-raw.spec.ts` **10.4-E2E-005** ✅ (browser side, 3 engines) | Vitest browser-mode harness deferred (Epic 13) — Node + 3-engine PW-Lib together honestly discharge the axis |
+| **F#69** No-op CompressionService → size invariant | `services/compression-service-edges.test.ts` **11.2-INT-004** ✅ | — |
+| **F#70** Malformed CompressionService → corrupt object (trust boundary) | `services/compression-service-edges.test.ts` **11.2-INT-005** ✅ | Epic 13 candidate: optional ingest-checksum to surface compressor bugs |
+| **F#75** Custom `[upload:${id}]` prefix on every log line | `services/logger-service-integration.test.ts` **11.2-INT-006** ✅ | — |
+| **F#76** `Layer.empty` → typed defect | `services/layers-composition.test.ts` **11.2-INT-007** ✅ | — |
+| **F#78** TestClock + `Schedule.exponential` canonical pattern | `multipart/testclock-schedule.test.ts` **11.2-INT-008** ✅ | — |
+| **F#79** Layer last-writer-wins via `Layer.merge` | `services/layers-composition.test.ts` **11.2-INT-009** ✅ | — |
+| **F#80** Layer.scoped finalizer exactly-once across success/error/abort | `multipart/cleanup.test.ts` **11.2-INT-010** ✅ | — |
+| **F#81** Concurrent uploads share Layer instance (no double-init) | `services/layers-composition.test.ts` **11.2-INT-011** ✅ | — |
+| **F#83** Source ReadableStream released on error | `multipart/cleanup.test.ts` **11.2-INT-012** ✅ | — |
+| **F#84** 100 sequential uploads → flat heap (Chromium) | `tests/e2e/lib/cleanup-heap-stability.spec.ts` **11.2-E2E-001** ✅ | Firefox/WebKit deferred (no `performance.memory` equivalent) |
+| **F#85** Pipeline error cancels upstream source | `multipart/cleanup.test.ts` **11.2-INT-013** ✅ | — |
+| **F#86** TCP RST mid-PUT → `PartUploadError`, no hang | `multipart/termination-edges.test.ts` **11.2-INT-014** ✅ | Real S3 / MinIO RST coverage belongs to 11.5 chaos cluster |
+| **F#87** Tab-close → orphan multipart (current behaviour) | `multipart/termination-edges.test.ts` **11.2-INT-015** ✅ | Epic 13 candidate: auto-abort on unhandled tab close (will flip this lock) |
+| **F#88** Semaphore permit released on terminal error | `multipart/cleanup.test.ts` **11.2-INT-016** ✅ | — |
+| **F#90** Events cleanup lens (unread closes cleanly) | `multipart/cleanup.test.ts` **11.2-INT-017** ✅ | Pairs with 11.6-INT-027 latency lens |
+
+**Story 11.2 coverage: 18/18 = 100% ✅** — all 18 IDs covered. ATDD red phase proved R-P2-2 HIGH-cluster contract already met (no lib fix).
+
+### 3.4 — R-P2-1 / R-P2-3 / R-P2-4 / R-P2-6+ — NOT YET COVERED
+
+Remaining HIGH/MEDIUM/LOW P2 risks pending Stories 11.3 / 11.4 / 11.5 / 11.7. See `test-design-epic-11.md` § Coverage Matrix for the full scope.
 
 ---
 
@@ -164,14 +214,15 @@ This section is updated each time a story surfaces a library bug fixed inline (p
 
 ## 5. Gate Decision
 
-**Status:** IN-PROGRESS (2/7 stories landed `done`)
+**Status:** IN-PROGRESS (3/7 stories landed `done`)
 **Sub-gate for Story 11.1:** ✅ PASS — 6/6 tests green, real lib finding shipped, triptyque green, code-review approved (L1+L2 fixed inline, L3+L4 informational), status `done`.
+**Sub-gate for Story 11.2:** ✅ PASS — 18/18 tests green (17 VT + 1 PW-Lib), ATDD red phase proved R-P2-2 HIGH contract already met (5/5 green on first run), triptyque green (build + 197 core + 44 adapters + 1 PW-Lib heap + typecheck), no lib fix needed, status `done` (pending code-review).
 **Sub-gate for Story 11.6:** ✅ PASS — 29/28 tests green, triptyque green pre- AND post-Codex-review (build + 224 tests + typecheck), no lib fix needed, code-review 0H/4M/1L with all 5 addressed inline, status `done`.
 
 Epic-level gate decision deferred until all 7 stories land. Per `test-design-epic-11.md` § Quality Gate Criteria:
-- All 5 HIGH (Score=6) clusters covered? Story 11.1 covers R-P2-5; R-P2-1/2/3/4 still pending.
-- ≥95% pass rate per story? 11.1 = 100% ✅; 11.6 = 100% ✅.
-- No P1 regression? Full repo sweep green (224 tests, up from 195 after 11.6). ✅
+- All 5 HIGH (Score=6) clusters covered? Story 11.1 covers R-P2-5; Story 11.2 covers R-P2-2; R-P2-1/3/4 still pending.
+- ≥95% pass rate per story? 11.1 = 100% ✅; 11.2 = 100% ✅; 11.6 = 100% ✅.
+- No P1 regression? Full repo sweep green (242 tests, up from 224 after 11.2). ✅
 - R-P2-4 (`simpleHttpUpload` duplex) status? Deferred to Story 11.7 (D1 in `epics.md`).
 - R-P2-11 (`CircuitOpenError`) status? Waived pending Epic 13 (D2 in `epics.md`).
 
@@ -179,4 +230,4 @@ Epic-level gate decision deferred until all 7 stories land. Per `test-design-epi
 
 ## 6. Next Update
 
-Suggested next: Story 11.2 (Layers/logger/cleanup) — covers R-P2-2 (HIGH) with 17 VT + 1 PW-Lib heap test. The heap test pairs with Story 11.6's `11.6-INT-022` (F#57 Node-side heap-flat lens) for full coverage. When 11.2 lands, update §1 totals, append §2.2 with 11.2-INT-001 → 11.2-INT-017 + 11.2-E2E-001, and append §4 with any new lib finding.
+Suggested next: Story 11.3 (Resume + reconcile edges) — covers R-P2-6 with 6 VT tests extending Epic 10 resume coverage. Some specs may need MinIO. After 11.3 lands, append §2.3 + §3.5 entries and bump §1 totals (53 → 59).

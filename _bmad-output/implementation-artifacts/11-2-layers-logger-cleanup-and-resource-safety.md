@@ -1,6 +1,6 @@
 # Story 11.2: Layers, Logger, Cleanup & Resource Safety
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -28,56 +28,55 @@ so that long-lived consumers do not leak streams, semaphores, or memory, and so 
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Plan the file layout (AC: all)
-  - [ ] VT tests split across `packages/tranquilload-core/src/services/`, `packages/tranquilload-core/src/multipart/`, and `packages/tranquilload-core/src/pipeline/` co-located test files
-  - [ ] PW-Lib heap test in `tests/e2e/lib/cleanup-heap-stability.spec.ts` (Chromium-only — `performance.memory` is non-standard)
+- [x] Task 1: Plan the file layout (AC: all)
+  - [x] VT tests split across `packages/tranquilload-core/src/services/`, `packages/tranquilload-core/src/multipart/`, and `packages/tranquilload-core/src/pipeline/` co-located test files
+  - [x] PW-Lib heap test in `tests/e2e/lib/cleanup-heap-stability.spec.ts` (Chromium-only — `performance.memory` is non-standard)
 
-- [ ] Task 2: Logger lifecycle tests — 11.2-INT-001 (F#65), 11.2-INT-002 (F#67), 11.2-INT-006 (F#75) (AC: #1, #8)
-  - [ ] Recording logger via `LoggerService` Layer that pushes into an outer-scope `received[]` array
-  - [ ] Lock the EXACT sequence of log lines for a happy-path multipart upload (locks regressions across logger refactors)
-  - [ ] Slow logger: inject `await new Promise(r => setTimeout(r, 50))` per log line; assert upload total wall-time does NOT scale linearly with log-line count
-  - [ ] Custom prefix: inject a logger that prepends `[upload:${id}]`; assert prefix appears on every line
+- [x] Task 2: Logger lifecycle tests — 11.2-INT-001 (F#65), 11.2-INT-002 (F#67), 11.2-INT-006 (F#75) (AC: #1, #8)
+  - [x] Recording logger via `LoggerService` Layer that pushes into an outer-scope `received[]` array
+  - [x] Lock the EXACT sequence of log lines for a happy-path multipart upload (locks regressions across logger refactors)
+  - [x] Slow logger: inject `await new Promise(r => setTimeout(r, 50))` per log line; assert upload total wall-time does NOT scale linearly with log-line count
+  - [x] Custom prefix: inject a logger that prepends `[upload:${id}]`; assert prefix appears on every line
 
-- [ ] Task 3: Layer composition tests — 11.2-INT-007 (F#76), 11.2-INT-009 (F#79), 11.2-INT-011 (F#81) (AC: #2, #3)
-  - [ ] `Layer.empty` → expect a clear `RuntimeException` from Effect (not a generic crash) — confirm error message is actionable
-  - [ ] Last-writer-wins: stack `CompressionServiceLive` then a user override; resolve the Tag and confirm the override is used
-  - [ ] Concurrent `.effect`: run 2 uploads in parallel sharing a `Layer.memoize`d service; assert the service constructor fires exactly once
+- [x] Task 3: Layer composition tests — 11.2-INT-007 (F#76), 11.2-INT-009 (F#79), 11.2-INT-011 (F#81) (AC: #2, #3)
+  - [x] `Layer.empty` → expect a clear `RuntimeException` from Effect (not a generic crash) — confirm error message is actionable (defect carries the missing-service tag name)
+  - [x] Last-writer-wins: `Layer.merge(LoggerServiceLive, RecordingLogger)` — the override wins (NOT chained `provideLayer`, which is first-writer-wins)
+  - [x] Concurrent `.effect`: run 2 uploads in parallel sharing a `Layer.effect`-built service via a SINGLE `Effect.provide`; assert the service builder fires exactly once
 
-- [ ] Task 4: Cleanup tests — 11.2-INT-010 (F#80), 11.2-INT-012 (F#83), 11.2-INT-013 (F#85), 11.2-INT-016 (F#88), 11.2-INT-017 (F#90) (AC: #4, #8)
-  - [ ] Layer finalizer with a counter `Ref`; run scope to closure (success + error + abort paths); assert counter increments exactly 3 times across the 3 paths (or once per scope close)
-  - [ ] Source stream release: attach a `cancel` spy to the source `ReadableStream`; force an error mid-upload; assert `cancel` was called
-  - [ ] Pipeline upstream cancel: same pattern, but error injected from the pipeline stage
-  - [ ] Semaphore permit leak: run an upload with `maxConcurrency=2`, force ALL parts to fail terminally; verify the semaphore permits return to baseline after error (probe `Semaphore.available`)
-  - [ ] Events-stream not read does NOT slow uploads (cleanup-lens variant of F#90; latency-lens variant lives in 11.6)
+- [x] Task 4: Cleanup tests — 11.2-INT-010 (F#80), 11.2-INT-012 (F#83), 11.2-INT-013 (F#85), 11.2-INT-016 (F#88), 11.2-INT-017 (F#90) (AC: #4, #8) — **completed in ATDD red phase**
+  - [x] Layer finalizer with a counter; run scope to closure (success + error + abort paths); assert counter increments exactly 3 times
+  - [x] Source stream release: attach a `cancel` spy to the source `ReadableStream`; force an error mid-upload; assert `cancel` was called
+  - [x] Pipeline upstream cancel: same pattern via a manually-erroring `TransformStream`; assert `cancel` was called on the user source via `pipeThrough` back-propagation
+  - [x] Semaphore permit leak probe: 6 parts × maxConcurrency=2, part 1 fails terminally; assert wall-clock settlement < 2s + `running===0` after upload settles (every part's `finally` ran)
+  - [x] Events-stream cleanup lens: unread events stream closes cleanly after upload completes (paired with 11.6-INT-027 latency lens)
 
-- [ ] Task 5: TCP RST + tab-close — 11.2-INT-014 (F#86), 11.2-INT-015 (F#87) (AC: #6, #7)
-  - [ ] TCP RST: use the test-app chaos endpoint OR a node:net mock to inject RST mid-PUT; assert `PartUploadError` not a hang (timeout < 5s)
-  - [ ] Tab close: simulate by aborting the AbortController WITHOUT awaiting `result`; assert orphan multipart exists server-side (current behaviour); add a `// Epic 13 candidate: auto-abort on unhandled close` comment for the future flip
+- [x] Task 5: TCP RST + tab-close — 11.2-INT-014 (F#86), 11.2-INT-015 (F#87) (AC: #6, #7)
+  - [x] TCP RST: spin a loopback `node:net` server that destroys the socket on connect; assert `PartUploadError` + cause + wall-clock < 5s (no hang)
+  - [x] Tab close: AbortController + dropped result handle approximation; assert `initiate` fired once, `completeUpload` NEVER fired → orphan multipart (Epic 13 candidate: auto-abort on unhandled close)
 
-- [ ] Task 6: Compression-service edges — 11.2-INT-003 (F#68), 11.2-INT-004 (F#69), 11.2-INT-005 (F#70) (AC: #8)
-  - [ ] Parameterized over `{ env: "browser-via-vitest-browser-mode", env: "node" }` — confirm default `CompressionServiceLive` works both ways
-  - [ ] No-op compressor → object size === source size (proves injection overrides the default)
-  - [ ] Malformed compressor → upload "succeeds" with corrupt object — codifies the no-checksum trust boundary
+- [x] Task 6: Compression-service edges — 11.2-INT-003 (F#68), 11.2-INT-004 (F#69), 11.2-INT-005 (F#70) (AC: #8)
+  - [x] Node-side: `CompressionServiceLive` resolves and round-trips through `CompressionStream("deflate-raw")` on Node 22+; browser-side covered by existing 10.4-E2E-005 (PW-Lib `deflate-raw.spec.ts`). Scope note: vitest browser-mode harness deferred to Epic 13.
+  - [x] No-op compressor → object size === source size (proves injection overrides the default)
+  - [x] Malformed compressor → upload "succeeds" with corrupt bytes — codifies the no-checksum trust boundary (Epic 13 candidate: optional ingest checksum)
 
-- [ ] Task 7: TestClock pattern — 11.2-INT-008 (F#78) (AC: #8)
-  - [ ] Use `@effect/vitest` `it.effect` with `Effect.fork` + `TestClock.adjust("Xms")` to test `Schedule.exponential` retry timing
-  - [ ] Reference MEMORY: "TestClock for time-based Schedules" pattern
+- [x] Task 7: TestClock pattern — 11.2-INT-008 (F#78) (AC: #8)
+  - [x] `@effect/vitest` `it.effect` with `Effect.fork` + `TestClock.adjust("Xms")` for `Schedule.exponential("100 millis").pipe(Schedule.compose(Schedule.recurs(5)))` — locks the canonical pattern for future time-dependent specs
 
-- [ ] Task 8: PW-Lib heap stability — 11.2-E2E-001 (F#84) (AC: #5)
-  - [ ] New spec `tests/e2e/lib/cleanup-heap-stability.spec.ts`, Chromium-only (`test.skip(({ browserName }) => browserName !== "chromium", ...)`)
-  - [ ] Run 100 sequential `uploadMultipart` calls in a single page context
-  - [ ] Sample `performance.memory.usedJSHeapSize` at start, after 50, after 100
-  - [ ] Assert the trend is flat (last sample < 1.5× first sample — tunable based on noise floor)
-  - [ ] Trigger GC between samples via `--enable-precise-memory-info` + `gc()` or `window.gc()` (Playwright launchOption `args: ['--js-flags=--expose-gc']`)
+- [x] Task 8: PW-Lib heap stability — 11.2-E2E-001 (F#84) (AC: #5) — **completed in ATDD red phase**
+  - [x] New spec `tests/e2e/lib/cleanup-heap-stability.spec.ts`, Chromium-only (skip Firefox/WebKit)
+  - [x] Bench harness: `examples/test-app/bench.html` + `examples/test-app/src/bench.ts` exposes `window.__tlBench__` for in-page `uploadMultipart` invocation without UI navigation
+  - [x] 100 sequential in-memory uploads, samples at 0/50/100, GC forced via `window.gc()` (chromium launched with `--js-flags=--expose-gc --enable-precise-memory-info`)
+  - [x] Heap ratio ≤ 1.5× baseline (mid + end sample both checked)
 
-- [ ] Task 9: Triptyque verification
-  - [ ] `pnpm turbo build` green
-  - [ ] `pnpm vitest run` green (17 new VT tests)
-  - [ ] `pnpm exec playwright test --project=lib tests/e2e/lib/cleanup-heap-stability.spec.ts` green (Chromium PASS, Firefox/WebKit SKIP)
-  - [ ] `pnpm turbo typecheck` green
+- [x] Task 9: Triptyque verification
+  - [x] `pnpm turbo build` green
+  - [x] `pnpm -r test` green (197 core + 44 adapters = 241 vitest tests, +13 net core vs Story 11.6)
+  - [x] `pnpm exec playwright test --project=lib cleanup-heap-stability.spec.ts` green (Chromium PASS, Firefox/WebKit SKIP)
+  - [x] `pnpm turbo typecheck` green
 
-- [ ] Task 10: Traceability update
-  - [ ] Append 18 rows (11.2-INT-001 → 11.2-INT-017 + 11.2-E2E-001) to `_bmad-output/test-artifacts/traceability/traceability-report-epic-11.md`
+- [x] Task 10: Traceability update
+  - [x] Appended 18 rows (11.2-INT-001 → 11.2-INT-017 + 11.2-E2E-001) to `_bmad-output/test-artifacts/traceability/traceability-report-epic-11.md` § 2.2 + § 3.3
+  - [x] Bumped § 1 totals (35 → 53), gate decision (2/7 → 3/7 stories landed)
 
 ## Dev Notes
 
@@ -123,16 +122,51 @@ so that long-lived consumers do not leak streams, semaphores, or memory, and so 
 
 ### Agent Model Used
 
-(to be filled by dev)
+Claude Opus 4.7 (`claude-opus-4-7`) — dev + ATDD red phase. Per `feedback_code_review_model.md`, code-review (if invoked) should run on a different LLM (Codex recommended after Story 11.6's success with this combo).
 
 ### Debug Log References
 
+- ATDD red phase: all 5 R-P2-2 HIGH-cluster tests (INT-010/012/013/016 + E2E-001) GREEN on first run against current lib — no lib fix surfaced. Same pattern as Story 11.6.
+- Two test-design issues caught during dev:
+  - INT-009 (last-writer-wins): chained `Stream.provideLayer(LayerA).provideLayer(LayerB)` is FIRST-writer-wins (LayerA's value used; LayerB no-ops because the requirement is already satisfied). Idiomatic last-writer-wins is `Layer.merge(Default, Override)`. Re-spec'd accordingly.
+  - INT-011 (concurrent shared layer): each parallel upload needs its own `ReadableStream` instance (a Web ReadableStream can be consumed only once). Use `Effect.suspend(() => Stream.runDrain(uploadMultipartEffect({stream: tinyStream(20), ...})))` so the stream is built when each branch actually runs.
+- `@effect/vitest` `it.effect` injects a TestClock. Tests using wall-clock `setTimeout` for synchronization (INT-010 Path C abort, INT-016 wall-clock settlement) must switch to plain vitest `it` + `Effect.runPromise` to get the default real-time Clock. INT-008 stays on `it.effect` because `TestClock.adjust` is precisely the pattern under test there.
+
 ### Completion Notes List
+
+- **18 net-new tests** landed: 17 vitest-integration (VT) + 1 Playwright-Lib (PW-Lib heap). All 18 GREEN.
+- **No lib change required.** ATDD red phase exercised the 5 R-P2-2 HIGH-cluster tests (INT-010/012/013/016 + E2E-001) before any dev work — all 5 passed against current lib on first run, confirming the cleanup/resource-safety contract is already correctly implemented. The remaining 13 tests are LOCK tests added by the dev phase (logger lifecycle, layer composition, compression edges, TestClock pattern, TCP RST, tab-close orphan, events cleanup lens).
+- **Test-app harness extended** (`examples/test-app/bench.html` + `examples/test-app/src/bench.ts`) to expose `window.__tlBench__` for the heap-stability spec. The bench page is a non-UI route consumed only by `tests/e2e/lib/cleanup-heap-stability.spec.ts`.
+- **Three reusable patterns from Story 11.6** (`project_test_timing_boundary_patterns.md`) applied: gated callback (INT-010 Path C `partStarted` Promise), surgical defect-refusal via `Effect.runPromiseExit` + `Cause.dieOption` + `Chunk.size(Cause.defects)` (INT-012/013/016), and honest scope (INT-016 wall-clock settlement is the narrower honest lock; E2E-001 1.5× heap threshold absorbs `performance.memory` coarseness; INT-003 Node-only side + reference to 10.4-E2E-005 for the browser axis).
+- **Two new reusable patterns** surfaced in this story:
+  1. `@effect/vitest` `it.effect` injects TestClock — tests with wall-clock `setTimeout` synchronization need plain `vitest` `it` + `Effect.runPromise`. Codified in INT-010 and INT-016. (Worth memorizing.)
+  2. Layer composition: `Layer.merge(Default, Override)` is the last-writer-wins primitive. Chained `Stream.provideLayer(A).provideLayer(B)` is FIRST-writer-wins (B no-ops once A satisfies the requirement). Codified in INT-009.
+- **2 Epic 13 candidates surfaced** (already flagged in test comments, don't re-flag):
+  - F#87 — auto-abort orphan multipart on unhandled tab close (INT-015 currently locks the orphan behaviour; flip in Epic 13)
+  - F#70 — optional ingest-side checksum to surface "compressor produced unreadable bytes" before upload completes (INT-005 codifies the current trust-boundary contract)
 
 ### Change Log
 
+- 2026-05-23 — **Story 11.2 → done.** 13 VT + 1 PW-Lib added on top of the 4 VT (cleanup) already landed in ATDD red phase. Triptyque (`pnpm turbo build` + `pnpm -r test` + `pnpm turbo typecheck`) green, plus `pnpm exec playwright test --project=lib cleanup-heap-stability.spec.ts` green. Core test count 184 → 197 (+13). Traceability report bumped (35 → 53; 3/7 stories landed). No lib fix.
+
 ### File List
+
+**New**
+- `packages/tranquilload-core/src/multipart/cleanup.test.ts` (5 tests: INT-010/012/013/016/017 — first 4 from ATDD red phase, INT-017 added by dev)
+- `packages/tranquilload-core/src/services/layers-composition.test.ts` (3 tests: INT-007/009/011)
+- `packages/tranquilload-core/src/services/compression-service-edges.test.ts` (3 tests: INT-003/004/005)
+- `packages/tranquilload-core/src/multipart/termination-edges.test.ts` (2 tests: INT-014/015)
+- `packages/tranquilload-core/src/multipart/testclock-schedule.test.ts` (1 test: INT-008)
+- `tests/e2e/lib/cleanup-heap-stability.spec.ts` (1 spec: E2E-001 — from ATDD red phase)
+- `examples/test-app/bench.html` (bench-page harness for E2E-001)
+- `examples/test-app/src/bench.ts` (exposes `window.__tlBench__` to the bench page)
+
+**Modified**
+- `packages/tranquilload-core/src/services/logger-service-integration.test.ts` (+3 tests: INT-001/002/006 appended; import `plainIt` from `vitest` for the wall-clock latency test)
+- `_bmad-output/test-artifacts/traceability/traceability-report-epic-11.md` (§ 2.2 added, § 3.3 added, § 1 totals + gate decision bumped)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (`11-2 → done`, `last_updated`)
+- `_bmad-output/implementation-artifacts/11-2-layers-logger-cleanup-and-resource-safety.md` (Status, tasks, Dev Agent Record, File List, Change Log)
 
 ## Senior Developer Review (AI)
 
-(to be filled at review time)
+(to be filled at review time — recommend Codex / different-LLM per `feedback_code_review_model.md`; Story 11.6's Codex review surfaced 4 MEDIUM test-design issues Opus might have missed)
