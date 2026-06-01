@@ -161,18 +161,17 @@ describe("LoggerService integration", () => {
   // (Story 10.1), so no lib change should be needed.
   // ──────────────────────────────────────────────────────────────────────────
 
-  // --- 11.2-INT-001 (F#65) — Recording logger captures the exact upload-
-  // lifecycle log sequence for a 3-part multipart upload. Locks the order
-  // AND count of log lines so a regression in safeLog placement (e.g. a
-  // dropped log call site, an added warn-level line, a reordered final log)
-  // surfaces as a test diff.
+  // --- 11.2-INT-001 (F#65) — Recording logger captures the upload-lifecycle
+  // log set for a 3-part multipart upload. Locks the EXACT set of part log
+  // lines (catches text drift like "Part X done" or duplicate partNumbers),
+  // the completion-last ordering, and the info-level invariant — without
+  // forcing `maxConcurrency: 1` (which would test a non-default path).
   //
-  // Determinism note: with `maxConcurrency: 1`, parts run serially, so the
-  // "Part N completed" log lines are emitted in partNumber order. Without
-  // this, `Stream.mapEffect(..., { concurrency: "unbounded" })` would race
-  // the per-part safeLog calls and the sequence would be non-deterministic.
+  // Order of per-part log lines is non-deterministic under the default
+  // `Stream.mapEffect(..., { concurrency: "unbounded" })`. We sort before
+  // comparing so the assertion is robust to scheduling.
   it.effect(
-    "11.2-INT-001 (F#65) — recording LoggerService captures the EXACT log-line sequence across a 3-part multipart upload lifecycle",
+    "11.2-INT-001 (F#65) — recording LoggerService captures the exact log-line set + completion ordering across a 3-part multipart upload",
     () =>
       Effect.gen(function* () {
         const received: LogEntry[] = []
@@ -183,19 +182,21 @@ describe("LoggerService integration", () => {
             chunkSize: 10,
             uploadPart: (n) => `etag-${n}`,
             completeUpload: () => {},
-            maxConcurrency: 1, // serialize parts so the log sequence is deterministic
           }).pipe(Stream.provideLayer(makeTestLayer(received))),
         )
 
-        // Full ordered sequence — a regression in safeLog placement (drop,
-        // add, reorder) fails this deep-equal.
         const messages = received.map(e => e.message)
-        expect(messages).toEqual([
+        const partLines = messages.filter(m => m.startsWith("Part "))
+
+        // Exact SET of part lines (catches text drift, dup partNumbers,
+        // missing partNumber) — order-tolerant via sort.
+        expect([...partLines].sort()).toEqual([
           "Part 1 completed",
           "Part 2 completed",
           "Part 3 completed",
-          "Multipart upload completed",
         ])
+        // Completion summary MUST be the last line — fires AFTER all parts log.
+        expect(messages[messages.length - 1]).toBe("Multipart upload completed")
         // All log lines are 'info' (debug/warn would imply a new code path).
         expect(received.every(e => e.level === "info")).toBe(true)
       }),
