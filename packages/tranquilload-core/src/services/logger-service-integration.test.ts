@@ -163,10 +163,16 @@ describe("LoggerService integration", () => {
 
   // --- 11.2-INT-001 (F#65) — Recording logger captures the exact upload-
   // lifecycle log sequence for a 3-part multipart upload. Locks the order
-  // and count of log lines so a regression in safeLog placement (e.g. a
-  // dropped log call site) surfaces as a test diff.
+  // AND count of log lines so a regression in safeLog placement (e.g. a
+  // dropped log call site, an added warn-level line, a reordered final log)
+  // surfaces as a test diff.
+  //
+  // Determinism note: with `maxConcurrency: 1`, parts run serially, so the
+  // "Part N completed" log lines are emitted in partNumber order. Without
+  // this, `Stream.mapEffect(..., { concurrency: "unbounded" })` would race
+  // the per-part safeLog calls and the sequence would be non-deterministic.
   it.effect(
-    "11.2-INT-001 (F#65) — recording LoggerService captures the exact log-line sequence across a 3-part multipart upload lifecycle",
+    "11.2-INT-001 (F#65) — recording LoggerService captures the EXACT log-line sequence across a 3-part multipart upload lifecycle",
     () =>
       Effect.gen(function* () {
         const received: LogEntry[] = []
@@ -177,15 +183,19 @@ describe("LoggerService integration", () => {
             chunkSize: 10,
             uploadPart: (n) => `etag-${n}`,
             completeUpload: () => {},
+            maxConcurrency: 1, // serialize parts so the log sequence is deterministic
           }).pipe(Stream.provideLayer(makeTestLayer(received))),
         )
 
+        // Full ordered sequence — a regression in safeLog placement (drop,
+        // add, reorder) fails this deep-equal.
         const messages = received.map(e => e.message)
-        const partCompletedMessages = messages.filter(m => /^Part \d+ completed$/.test(m))
-        expect(partCompletedMessages.length).toBe(3)
-        // Last line must be the completion summary — locks the "completion
-        // event fires AFTER all parts log" ordering.
-        expect(messages[messages.length - 1]).toBe("Multipart upload completed")
+        expect(messages).toEqual([
+          "Part 1 completed",
+          "Part 2 completed",
+          "Part 3 completed",
+          "Multipart upload completed",
+        ])
         // All log lines are 'info' (debug/warn would imply a new code path).
         expect(received.every(e => e.level === "info")).toBe(true)
       }),
@@ -196,20 +206,30 @@ describe("LoggerService integration", () => {
   // upload fiber must not be blocked on async logger work (real-world OTLP /
   // Pino-async transports are exactly this shape).
   //
+  // Key contract being locked: the user's `log` callback RETURNS a Promise that
+  // resolves only after 50ms — if a future safeLog regression awaited it, the
+  // upload would scale linearly (≥ 11 × 50ms = 550ms). The current safeLog
+  // wraps in `Effect.try` (sync — returned Promise is discarded), so the
+  // unawaited Promise leaks harmlessly.
+  //
   // Plain `it` (not `it.effect`) because we measure real wall-clock time and
   // need the default Clock (not TestClock).
   plainIt(
     "11.2-INT-002 (F#67) — slow async logger does not scale upload latency with log-line count (fire-and-forget)",
     async () => {
       const slowLogger: Layer.Layer<LoggerService> = Layer.succeed(LoggerService, {
-        // Returning Promise<void> from a `log: (...) => void` callback is
-        // intentional — TS allows it (void permits any return) and it mirrors
-        // real async transports. safeLog must not await this.
-        log: ((): ((level: LogLevel, msg: string, data?: unknown) => void) => {
-          return ((_level, _msg, _data) => {
-            void new Promise(r => setTimeout(r, 50)) // unawaited 50ms
-          }) as (level: LogLevel, msg: string, data?: unknown) => void
-        })(),
+        // RETURNS a Promise<void> resolved after 50ms. Cast: the public Logger
+        // type is `(level, msg, data?) => void`, but `void` permits any return
+        // (including Promise<void>) per TS. This shape mirrors real async
+        // transports (Pino async, OTLP) — and is what makes the test
+        // "regression-catching": IF safeLog ever started awaiting the returned
+        // Promise, the upload would block on every log line.
+        log: ((_level: LogLevel, _msg: string, _data?: unknown) =>
+          new Promise<void>(r => setTimeout(r, 50))) as (
+          level: LogLevel,
+          msg: string,
+          data?: unknown,
+        ) => void,
       })
 
       // 10 parts → 10× "Part N completed" + 1× "Multipart upload completed" = 11 log calls.

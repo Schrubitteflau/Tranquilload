@@ -58,33 +58,43 @@ describe("Story 11.2 — termination edges (R-P2-2)", () => {
       const url = `http://127.0.0.1:${addr.port}/part`
 
       try {
+        // Promise.race against a wall-clock sentinel — the test enforces its
+        // OWN budget; otherwise a true hang would fall through to vitest's
+        // default 5s timeout and never reach the assertion. Mirrors the
+        // pattern used in 11.2-INT-016.
         const start = performance.now()
-        const exit = await Effect.runPromise(
-          Effect.exit(
-            Stream.runDrain(
-              uploadMultipartEffect({
-                stream: tinyStream(10),
-                chunkSize: 10,
-                uploadPart: async (_n, chunk) => {
-                  const res = await fetch(url, {
-                    method: "PUT",
-                    body: chunk as unknown as BodyInit,
-                  })
-                  return res.headers.get("ETag") ?? "etag"
-                },
-                completeUpload: () => {},
-                retrySchedule: Schedule.recurs(0),
-              }),
-            ).pipe(Effect.provide(LoggerServiceLive)),
+        const settled = await Promise.race([
+          Effect.runPromise(
+            Effect.exit(
+              Stream.runDrain(
+                uploadMultipartEffect({
+                  stream: tinyStream(10),
+                  chunkSize: 10,
+                  uploadPart: async (_n, chunk) => {
+                    const res = await fetch(url, {
+                      method: "PUT",
+                      body: chunk as unknown as BodyInit,
+                    })
+                    return res.headers.get("ETag") ?? "etag"
+                  },
+                  completeUpload: () => {},
+                  retrySchedule: Schedule.recurs(0),
+                }),
+              ).pipe(Effect.provide(LoggerServiceLive)),
+            ),
           ),
-        )
+          new Promise<"WALL_CLOCK_TIMEOUT">(resolve =>
+            setTimeout(() => resolve("WALL_CLOCK_TIMEOUT"), 5000),
+          ),
+        ])
         const elapsed = performance.now() - start
 
         expect(
-          elapsed,
-          `upload took ${elapsed.toFixed(1)}ms — expected < 5000ms (no hang on RST)`,
-        ).toBeLessThan(5000)
+          settled,
+          `upload did NOT settle within 5s — TCP RST surfaced as a hang (elapsed=${elapsed.toFixed(1)}ms)`,
+        ).not.toBe("WALL_CLOCK_TIMEOUT")
 
+        const exit = settled as Exit.Exit<void, unknown>
         expect(Exit.isFailure(exit)).toBe(true)
         if (Exit.isFailure(exit)) {
           const failure = Cause.failureOption(exit.cause)
@@ -126,6 +136,18 @@ describe("Story 11.2 — termination edges (R-P2-2)", () => {
       let completeCalls = 0
       let partsStarted = 0
 
+      // Gated callback (Pattern 1 from project_test_timing_boundary_patterns.md):
+      // we PROVE initiate has fired before asserting, instead of relying on a
+      // fixed sleep that could under-shoot on a slow CI runner.
+      let resolveInitiated: () => void = () => {}
+      const initiated = new Promise<void>(r => {
+        resolveInitiated = r
+      })
+      let resolvePartStarted: () => void = () => {}
+      const partStarted = new Promise<void>(r => {
+        resolvePartStarted = r
+      })
+
       const ctrl = new AbortController()
 
       const handle = uploadMultipart({
@@ -133,10 +155,12 @@ describe("Story 11.2 — termination edges (R-P2-2)", () => {
         chunkSize: 10,
         initiate: () => {
           initiateCalls += 1
+          resolveInitiated()
           return { uploadId: "orphan-tab-close-test" }
         },
         uploadPart: async (n) => {
           partsStarted += 1
+          if (partsStarted === 1) resolvePartStarted()
           // Slow part — guarantees we can "close the tab" mid-upload.
           await realtimeSleep(80)
           return `etag-${n}`
@@ -151,8 +175,10 @@ describe("Story 11.2 — termination edges (R-P2-2)", () => {
       // Suppress unhandled-rejection noise; we are intentionally NOT awaiting.
       handle.result.catch(() => {})
 
-      // Wait for initiate to fire and at least one part to start.
-      await realtimeSleep(30)
+      // Wait for initiate AND the first part to have started — gates prove
+      // the timing rather than incidental scheduling.
+      await initiated
+      await partStarted
 
       expect(initiateCalls, "initiate should fire exactly once at upload start").toBe(1)
       expect(partsStarted, "at least one part should be in-flight before tab close").toBeGreaterThan(0)

@@ -1,13 +1,15 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Cause, Chunk, Effect, Exit, Layer, Ref, Stream } from "effect"
-import { LoggerService, LoggerServiceLive, type LogLevel } from "./logger-service.js"
+import { LoggerService } from "./logger-service.js"
+import { CompressionService, CompressionServiceLive } from "./compression-service.js"
+import { compress } from "../pipeline/compress.js"
 import { uploadMultipartEffect } from "../multipart/upload-stream.js"
 
 /**
  * Story 11.2 — Layer composition edges (R-P2-8, MEDIUM).
  *
- * AC #2: `Layer.empty` provided where the lib expects `LoggerService` →
- * clear typed Effect error (not a silent crash).
+ * AC #2: `Layer.empty` provided where the lib expects `CompressionServiceLive`
+ * OR `LoggerServiceLive` → clear typed Effect error (not a silent crash).
  * AC #3: Last-writer-wins semantics + concurrent `.effect` programs share
  * a Layer instance (no double-init).
  */
@@ -37,7 +39,7 @@ describe("Story 11.2 — Layer composition edges (R-P2-8)", () => {
   // accidentally omits a service.
   // ────────────────────────────────────────────────────────────────────────────
   it.effect(
-    "11.2-INT-007 (F#76) — Layer.empty where LoggerService expected → failure carries the missing service name",
+    "11.2-INT-007a (F#76) — Layer.empty where LoggerService expected → failure carries the missing service name",
     () =>
       Effect.gen(function* () {
         const program = uploadMultipartEffect({
@@ -80,6 +82,43 @@ describe("Story 11.2 — Layer composition edges (R-P2-8)", () => {
   )
 
   // ────────────────────────────────────────────────────────────────────────────
+  // 11.2-INT-007b (F#76) — Layer.empty where CompressionService expected
+  //
+  // AC #2 names both `LoggerServiceLive` AND `CompressionServiceLive`. The
+  // CompressionService requirement only surfaces when the user composes a
+  // pipeline via `compress("deflate-raw")`. Same lock as 007a: a missing
+  // CompressionService must produce an observable defect mentioning the tag.
+  // ────────────────────────────────────────────────────────────────────────────
+  it.effect(
+    "11.2-INT-007b (F#76) — Layer.empty where CompressionService expected → failure carries the missing service name",
+    () =>
+      Effect.gen(function* () {
+        // `compress` requires CompressionService; provide Layer.empty for it.
+        const compressEffect = compress("deflate-raw").pipe(
+          Effect.provide(Layer.empty as unknown as Layer.Layer<CompressionService>),
+        )
+
+        const exit = yield* Effect.exit(compressEffect)
+        expect(Exit.isFailure(exit)).toBe(true)
+
+        if (Exit.isFailure(exit)) {
+          const defects = Cause.defects(exit.cause)
+          expect(
+            Chunk.size(defects),
+            "expected a defect carrying the missing-CompressionService info; got none",
+          ).toBeGreaterThan(0)
+          const messages = Chunk.toReadonlyArray(defects)
+            .map(d => String((d as Error)?.message ?? d))
+            .join(" | ")
+          expect(
+            messages,
+            `defect message should mention the missing service tag (got "${messages}")`,
+          ).toMatch(/CompressionService|Service/i)
+        }
+      }),
+  )
+
+  // ────────────────────────────────────────────────────────────────────────────
   // 11.2-INT-009 (F#79) — Layer last-writer-wins under `Layer.merge`
   //
   // Idiomatic stacking is `Layer.merge(Default, Override)`: when both layers
@@ -94,37 +133,56 @@ describe("Story 11.2 — Layer composition edges (R-P2-8)", () => {
   // overrides.
   // ────────────────────────────────────────────────────────────────────────────
   it.effect(
-    "11.2-INT-009 (F#79) — Layer.merge(Default, Override) resolves the tag to Override's value (last-writer-wins)",
+    "11.2-INT-009 (F#79) — Layer.merge(CompressionServiceLive, UserOverride) resolves the tag to Override's value (last-writer-wins)",
     () =>
       Effect.gen(function* () {
-        const recorded: string[] = []
-        const RecordingLogger: Layer.Layer<LoggerService> = Layer.succeed(
-          LoggerService,
+        // Sentinel: the user override replaces compression with a stream that
+        // emits a known 3-byte marker. If the default CompressionServiceLive
+        // (real deflate-raw) had won, the output would NOT be these bytes.
+        const SENTINEL = new Uint8Array([0x55, 0xaa, 0x55])
+        let overrideCallCount = 0
+
+        const UserCompression: Layer.Layer<CompressionService> = Layer.succeed(
+          CompressionService,
           {
-            log: (_level: LogLevel, message: string, _data?: unknown) => {
-              recorded.push(message)
+            compress: (_stream, _alg) => {
+              overrideCallCount += 1
+              return new ReadableStream<Uint8Array>({
+                start(c) {
+                  c.enqueue(SENTINEL)
+                  c.close()
+                },
+              })
             },
           },
         )
 
-        const combined = Layer.merge(LoggerServiceLive, RecordingLogger)
+        const combined = Layer.merge(CompressionServiceLive, UserCompression)
 
-        yield* Stream.runDrain(
-          uploadMultipartEffect({
-            stream: tinyStream(20),
-            chunkSize: 10,
-            uploadPart: (n) => `etag-${n}`,
-            completeUpload: () => {},
-          }).pipe(Stream.provideLayer(combined)),
-        )
+        // Resolve `compress("deflate-raw")` against the merged layer and run
+        // the resulting Transform on a source. We then read all bytes and
+        // verify they are the sentinel — proving the user override beat the
+        // default.
+        const transform = yield* Effect.provide(compress("deflate-raw"), combined)
+        const source = new ReadableStream<Uint8Array>({
+          start(c) {
+            c.enqueue(new Uint8Array(32).fill(7))
+            c.close()
+          },
+        })
+        const processed = transform(source)
 
-        // If LoggerServiceLive (no-op) had won, recorded would be empty.
-        expect(
-          recorded.length,
-          `recorded ${recorded.length} entries — expected RecordingLogger to win the merge`,
-        ).toBeGreaterThan(0)
-        expect(recorded.some(m => m.startsWith("Part "))).toBe(true)
-        expect(recorded.some(m => m === "Multipart upload completed")).toBe(true)
+        const collected: number[] = []
+        const reader = processed.getReader()
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const { value, done } = yield* Effect.promise(() => reader.read())
+          if (done) break
+          if (value !== undefined) collected.push(...Array.from(value))
+        }
+
+        expect(overrideCallCount, "user override's compress must be invoked").toBe(1)
+        expect(collected).toEqual(Array.from(SENTINEL))
       }),
   )
 

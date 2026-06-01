@@ -289,11 +289,21 @@ describe("Story 11.2 — cleanup & resource safety (R-P2-2)", () => {
   // Plain `it` for real-time Clock — the "upload settles" probe needs wall
   // time, not TestClock.
   plainIt(
-    "11.2-INT-016 (F#88) — terminal error releases all in-flight semaphore permits (upload settles + every part's finally runs)",
+    "11.2-INT-016 (F#88) — terminal error releases all in-flight semaphore permits (gated 2-permit overlap proven before failure)",
     async () => {
       let running = 0
       let maxObserved = 0
       let everStarted = 0
+
+      // Gated callback (Pattern 1): part 1 holds its failure UNTIL part 2 has
+      // entered uploadPart, PROVING the semaphore actually permitted two
+      // concurrent in-flight parts at the moment the failure was raised. A
+      // weaker test that only asserts `maxObserved <= 2` would pass even with
+      // no concurrency at all (maxObserved=1) — Codex flagged this.
+      let resolvePart2Entered: () => void = () => {}
+      const part2Entered = new Promise<void>(r => {
+        resolvePart2Entered = r
+      })
 
       const uploadPart = async (partNumber: number): Promise<string> => {
         running += 1
@@ -301,9 +311,18 @@ describe("Story 11.2 — cleanup & resource safety (R-P2-2)", () => {
         maxObserved = Math.max(maxObserved, running)
         try {
           if (partNumber === 1) {
-            await realtimeSleep(20)
+            // Hold the failure until part 2 has also entered uploadPart —
+            // guarantees an observable 2-permit overlap. Bound with a 500ms
+            // safety so a broken semaphore (part 2 never enters) doesn't
+            // wedge the whole test indefinitely; the outer Promise.race +
+            // assertion will catch that as a wall-clock timeout.
+            await Promise.race([
+              part2Entered,
+              realtimeSleep(500),
+            ])
             throw new Error("terminal part 1")
           }
+          if (partNumber === 2) resolvePart2Entered()
           await realtimeSleep(30)
           return `etag-${partNumber}`
         } finally {
@@ -354,9 +373,15 @@ describe("Story 11.2 — cleanup & resource safety (R-P2-2)", () => {
         }
       }
 
-      // Concurrency upper bound respected (sanity).
+      // Concurrency: lower bound PROVES the semaphore allowed 2 permits to be
+      // held simultaneously at the moment of failure — the actual contract
+      // under test. Upper bound is the maxConcurrency sanity check.
+      expect(
+        maxObserved,
+        `expected 2 concurrent parts in flight at the moment of failure (gated via part2Entered); maxObserved=${maxObserved}`,
+      ).toBeGreaterThanOrEqual(2)
       expect(maxObserved).toBeLessThanOrEqual(2)
-      expect(everStarted).toBeGreaterThanOrEqual(1)
+      expect(everStarted).toBeGreaterThanOrEqual(2)
 
       // (b) Every started part reached its finally block — no stranded uploads
       // holding permits.

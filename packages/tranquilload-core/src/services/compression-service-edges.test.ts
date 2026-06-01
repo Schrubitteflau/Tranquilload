@@ -51,24 +51,55 @@ const collectAll = async (stream: ReadableStream<Uint8Array>): Promise<Uint8Arra
 
 describe("Story 11.2 — CompressionService edges (R-P2-8)", () => {
   // ────────────────────────────────────────────────────────────────────────────
-  // 11.2-INT-003 (F#68) — Default `CompressionServiceLive` resolves on Node 22+
+  // 11.2-INT-003 (F#68) — Default `CompressionServiceLive` round-trips on Node 22+
   //
   // Scope (Pattern 3): Node 22 (the minimum supported runtime per
   // `engines.node`) exposes `globalThis.CompressionStream` natively, so the
-  // Layer's runtime probe MUST succeed and yield a working compression
-  // transform. The browser side is covered by 10.4-E2E-005 (existing PW-Lib).
+  // Layer's runtime probe MUST succeed and yield a WORKING compression
+  // transform. We prove "working" via a deflate-raw → inflate-raw round-trip
+  // and byte-identity assertion against the source — a non-empty-output check
+  // alone could pass even if compress returned random garbage.
+  //
+  // Browser-side parameterization: vitest browser-mode is not configured in
+  // this repo (deferred per epics.md / Epic 13 candidate). The 3-browser axis
+  // (chromium / firefox / webkit) is discharged honestly by the existing
+  // 10.4-E2E-005 PW-Lib spec (`tests/e2e/lib/deflate-raw.spec.ts`), which
+  // runs the same `new CompressionStream("deflate-raw")` probe inside each
+  // engine's DOM realm.
   // ────────────────────────────────────────────────────────────────────────────
   it.effect(
-    "11.2-INT-003 (F#68) — CompressionServiceLive resolves to a working CompressionStream on Node 22+ (DOM globals)",
+    "11.2-INT-003 (F#68) — CompressionServiceLive deflate-raw round-trips byte-identical on Node 22+",
     () =>
       Effect.gen(function* () {
         const svc = yield* Effect.provide(CompressionService, CompressionServiceLive)
-        const input = new Uint8Array(64).map((_, i) => i)
-        const compressed = svc.compress(fromBytes(input), "deflate-raw")
-        const bytes = yield* Effect.promise(() => collectAll(compressed))
-        // We don't assert on the compressed byte count (compression ratio is
-        // input-dependent) — only that compression yielded SOME output.
-        expect(bytes.byteLength).toBeGreaterThan(0)
+
+        // Use a non-trivial source — random-ish bytes so compress() actually
+        // does work (a zero-fill could degenerate into a near-empty payload
+        // and mask a broken implementation).
+        const source = new Uint8Array(256).map((_, i) => (i * 31 + 7) & 0xff)
+
+        // Compress via the Live service.
+        const compressed = svc.compress(fromBytes(source), "deflate-raw")
+        const compressedBytes = yield* Effect.promise(() => collectAll(compressed))
+        expect(compressedBytes.byteLength).toBeGreaterThan(0)
+
+        // Decompress via DOM `DecompressionStream("deflate-raw")` — the inverse
+        // primitive. Identity (decompress ∘ compress) must equal the source.
+        const decompressed = fromBytes(compressedBytes).pipeThrough(
+          new DecompressionStream("deflate-raw") as unknown as TransformStream<
+            Uint8Array,
+            Uint8Array
+          >,
+        )
+        const roundTripped = yield* Effect.promise(() => collectAll(decompressed))
+
+        expect(roundTripped.byteLength, "round-trip length must match source").toBe(
+          source.byteLength,
+        )
+        expect(
+          Array.from(roundTripped),
+          "round-trip bytes must equal source byte-for-byte",
+        ).toEqual(Array.from(source))
       }),
   )
 

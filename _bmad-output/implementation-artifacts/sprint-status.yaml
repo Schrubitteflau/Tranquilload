@@ -34,7 +34,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-14
-last_updated: 2026-05-23 # updated: story 11.2 → done (18 tests, 13 VT + 1 PW-Lib added on top of 4 VT from ATDD red phase; no lib fix; triptyque GREEN)
+last_updated: 2026-05-23 # updated: story 11.2 Codex review 0H/9P/0L — all 9 test-design fixes inline (slow-logger Promise return, exact-sequence deep-equal, Layer.empty CompressionService variant, INT-009 → CompressionServiceLive, INT-003 round-trip, INT-014 race vs 5s, INT-015 gated, INT-016 concurrency proof). Triptyque GREEN, no lib change.
 project: Tranquilload
 project_key: NOKEY
 tracking_system: file-system

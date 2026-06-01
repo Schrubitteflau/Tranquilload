@@ -78,6 +78,20 @@ so that long-lived consumers do not leak streams, semaphores, or memory, and so 
   - [x] Appended 18 rows (11.2-INT-001 → 11.2-INT-017 + 11.2-E2E-001) to `_bmad-output/test-artifacts/traceability/traceability-report-epic-11.md` § 2.2 + § 3.3
   - [x] Bumped § 1 totals (35 → 53), gate decision (2/7 → 3/7 stories landed)
 
+### Review Findings
+
+All 9 findings verified on technical merit and addressed inline. Triptyque green pre- AND post-review (build + 198 core + 44 adapters + 1 PW-Lib heap + typecheck; +1 core test from the new INT-007b Layer.empty CompressionService variant).
+
+- [x] [Review][Patch] Slow logger test does not return an async value, so it cannot catch awaited-logger regressions [packages/tranquilload-core/src/services/logger-service-integration.test.ts:204] — **Fixed:** `log: (...) => new Promise(r => setTimeout(r, 50))` now RETURNS the Promise; if safeLog regressed to `await`, the upload would scale linearly with log count.
+- [x] [Review][Patch] "Exact sequence" logger test only checks partial shape, not the full deterministic sequence [packages/tranquilload-core/src/services/logger-service-integration.test.ts:183] — **Fixed:** set `maxConcurrency: 1` so part-completion logs emit in partNumber order, then `expect(messages).toEqual([...])` with the full ordered array.
+- [x] [Review][Patch] Layer.empty missing-service test covers LoggerService only, not CompressionService [packages/tranquilload-core/src/services/layers-composition.test.ts:39] — **Fixed:** added INT-007b sibling that drives `compress("deflate-raw")` against `Layer.empty as Layer<CompressionService>` and asserts the defect mentions the missing tag. Original test renamed INT-007a.
+- [x] [Review][Patch] Last-writer-wins test targets LoggerService instead of the specified CompressionServiceLive override path [packages/tranquilload-core/src/services/layers-composition.test.ts:110] — **Fixed:** INT-009 rewritten to `Layer.merge(CompressionServiceLive, UserCompression)` with a sentinel-byte override + byte-identity assertion proving the user override beat the default.
+- [x] [Review][Patch] CompressionServiceLive browser+Node default is not newly parameterized under story 11.2 coverage [packages/tranquilload-core/src/services/compression-service-edges.test.ts:61] — **Partially addressed:** Node-side rigor lifted to a true round-trip (see Finding #9). Browser-side (vitest browser-mode) deferred — the 3-engine PW-Lib spec `10.4-E2E-005` discharges the cross-browser axis. Scope note tightened in the test comment.
+- [x] [Review][Patch] TCP RST test can hang before reaching its elapsed-time assertion [packages/tranquilload-core/src/multipart/termination-edges.test.ts:62] — **Fixed:** wrapped the `Effect.runPromise` in `Promise.race` against a 5s sentinel + `expect(settled).not.toBe("WALL_CLOCK_TIMEOUT")`. The test now enforces its OWN budget instead of relying on vitest's default timeout. Mirrors the INT-016 pattern.
+- [x] [Review][Patch] Tab-close simulation relies on a fixed 30 ms sleep instead of a start gate [packages/tranquilload-core/src/multipart/termination-edges.test.ts:154] — **Fixed:** added two Promise gates — `initiated` resolved by the `initiate` callback, `partStarted` resolved by the first `uploadPart` entry — and `await` both before asserting. Pattern 1 from `project_test_timing_boundary_patterns.md`.
+- [x] [Review][Patch] Semaphore cleanup test does not prove two parts were concurrently in flight [packages/tranquilload-core/src/multipart/cleanup.test.ts:357] — **Fixed:** part 1 now `await`s a `part2Entered` gate (resolved when part 2 enters `uploadPart`) before throwing, PROVING 2-permit overlap at the moment of failure. Added `expect(maxObserved).toBeGreaterThanOrEqual(2)` lower-bound assertion. 500ms safety race on the gate so a broken semaphore (part 2 never starts) surfaces as a wall-clock timeout, not a hang.
+- [x] [Review][Patch] CompressionServiceLive "working" test checks only non-empty bytes, not a round-trip [packages/tranquilload-core/src/services/compression-service-edges.test.ts:67] — **Fixed (same change as #5):** INT-003 now does deflate-raw → `DecompressionStream("deflate-raw")` round-trip on a 256-byte non-trivial source + byte-identity assertion against the source. A broken compress() returning garbage now fails this test.
+
 ## Dev Notes
 
 ### Spec inputs
@@ -148,6 +162,7 @@ Claude Opus 4.7 (`claude-opus-4-7`) — dev + ATDD red phase. Per `feedback_code
 ### Change Log
 
 - 2026-05-23 — **Story 11.2 → done.** 13 VT + 1 PW-Lib added on top of the 4 VT (cleanup) already landed in ATDD red phase. Triptyque (`pnpm turbo build` + `pnpm -r test` + `pnpm turbo typecheck`) green, plus `pnpm exec playwright test --project=lib cleanup-heap-stability.spec.ts` green. Core test count 184 → 197 (+13). Traceability report bumped (35 → 53; 3/7 stories landed). No lib fix.
+- 2026-05-23 — **Codex code-review fixes (test-design rigor only).** 9 findings addressed inline: slow-logger now returns Promise instead of discarding (#1), exact-sequence INT-001 uses maxConcurrency=1 + deep-equal full ordered array (#2), Layer.empty INT-007 split into 007a (LoggerService) + 007b (CompressionService) per AC #2 wording (#3), INT-009 rewritten to override CompressionServiceLive with sentinel bytes per AC #3 (#4), INT-003 lifted to full deflate-raw round-trip via DecompressionStream + byte-identity (#5+#9), INT-014 wrapped in Promise.race vs 5s sentinel so a hang fails the assertion (#6), INT-015 uses gated `initiated` + `partStarted` Promises instead of fixed 30ms sleep (#7), INT-016 gates part 1's failure on `part2Entered` to PROVE 2-permit overlap + adds `maxObserved >= 2` lower-bound (#8). Core test count: 197 → 198 (+1, from the new INT-007b). Triptyque green pre- AND post-review fixes. NO lib change.
 
 ### File List
 
@@ -169,4 +184,20 @@ Claude Opus 4.7 (`claude-opus-4-7`) — dev + ATDD red phase. Per `feedback_code
 
 ## Senior Developer Review (AI)
 
-(to be filled at review time — recommend Codex / different-LLM per `feedback_code_review_model.md`; Story 11.6's Codex review surfaced 4 MEDIUM test-design issues Opus might have missed)
+**Reviewer:** Codex (OpenAI) — per `feedback_code_review_model.md` recommendation to use a different LLM than the dev model (Opus 4.7).
+
+**Outcome:** Approve with patches. **0 HIGH / 9 PATCH-level (test-design rigor) / 0 LOW.** No lib change required — all findings target test rigor.
+
+**Findings & Resolutions** (verbatim list above in § Review Findings). Summary:
+
+- 8 of 9 findings fully patched inline.
+- 1 (#5 browser+Node parameterization) partially addressed: Node-side rigor lifted to a full round-trip (Finding #9 fix); browser-side deferred — the 3-engine PW-Lib spec `10.4-E2E-005` honestly discharges the cross-browser axis; vitest browser-mode harness deferred to Epic 13. Scope note in the test comment.
+
+**Triptyque post-review:** build ✅ · 198 core + 44 adapters = 242 vitest tests ✅ · typecheck ✅ · `tests/e2e/lib/cleanup-heap-stability.spec.ts` (Chromium) ✅.
+
+**Reusable patterns reinforced** (already in MEMORY.md):
+- Pattern 1 (gated callback) applied to INT-015 + INT-016.
+- Wall-clock-budget race pattern applied to INT-014 (matching INT-016's existing use).
+- Honest scope (Pattern 3) explicit on INT-003 browser-side deferral.
+
+**No regressions.** No lib code modified by this review pass — all changes are in test files + the story file's Review Findings + Change Log + this section. Story 11.2 remains `done`.
