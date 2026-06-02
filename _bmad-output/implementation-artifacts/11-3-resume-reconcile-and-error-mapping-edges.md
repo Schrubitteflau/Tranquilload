@@ -4,7 +4,7 @@ baseline_commit: cdadbc70ccd51203ae55ae9741ac9a8f44eaab79
 
 # Story 11.3: Resume + Reconcile + Error-Mapping Edges
 
-Status: review
+Status: done
 
 ## Story
 
@@ -147,4 +147,19 @@ claude-opus-4-8 (Opus 4.8) — dev per Epics 6–9 permanent rule.
 
 ## Senior Developer Review (AI)
 
-(to be filled at review time)
+**Reviewer:** independent Opus 4.8 agent (fresh context — Codex unavailable; another Opus stands in per user direction 2026-06-02).
+**Date:** 2026-06-02
+**Outcome:** ✅ **Approve** — 0 HIGH / 0 MEDIUM / 2 LOW (informational only, no change recommended).
+
+### Verdict
+
+Six surgical, phase-accurate LOCK tests that each add a distinct incremental angle over the sibling `upload-stream.test.ts` suite (standout: INT-005's stale-reconciled-part → `CompleteUploadError`, previously untested). Assertions match the actual lib mapping; ordering claims are structurally sound (INT-002's "0 PUTs before ReconcileError" is structurally guaranteed by reconcile being yielded in setup `Effect.gen` before `partsStream` — not racy, no gated Promise needed); `Effect.flip` is the correct guard for typed-failure assertions (a defect would propagate as an unhandled failure, not silently pass); the three Epic 13 candidates are honestly flagged. Triptyque green, no lib change warranted.
+
+### Findings
+
+- **HIGH:** none.
+- **MEDIUM:** none.
+- **LOW-1 (informational):** INT-006(b) equivalence arm (`resume-error-edges.test.ts:228-243`) is near-constructive — the "no reconcile callback" arm trivially yields `[1,2,3,4,5]`, so the equivalence comparison is close to comparing a value with itself. The `ceil` formula + `UploadCompleted.totalParts` assertions carry the real weight. **No fix** — locking "empty array ≠ divergence" is legitimate.
+- **LOW-2 (informational):** INT-001(a) lightly overlaps the existing `Schedule.whileInput` single-attempt path (both → `PartUploadError`, `cause===presigned`, 1 attempt). The load-bearing novelty lives in part (b) (`recurs(2)` → 3 calls → `MaxRetriesExceededError`, proving no fail-fast by default). Acceptable as the two-pronged setup. **No fix.**
+
+Both LOW items are observations, not gaps; the reviewer explicitly advised AGAINST reworking them (coverage-regression trap, per the Story 11.2 lesson). **Dev decision: no changes applied** — concur with the reviewer. `receiving-code-review` skepticism applied: a clean 0H/0M with the reviewer self-policing against padding is the expected outcome for a MEDIUM-risk surface-area-lock story.
