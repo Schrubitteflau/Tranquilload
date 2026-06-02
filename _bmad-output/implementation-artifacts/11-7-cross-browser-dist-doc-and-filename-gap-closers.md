@@ -1,6 +1,10 @@
+---
+baseline_commit: 147903a309b4054a86cc1f4dd7d60ed0d390b8ae
+---
+
 # Story 11.7: Cross-Browser + DIST + DOC + Filename Gap-Closers
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -24,76 +28,61 @@ so that the bundle/runtime contract holds across all 3 browsers and the README e
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: File layout (AC: all)
-  - [ ] PW-Lib: `tests/e2e/lib/simple-http-upload-cross-browser.spec.ts` (11.7-E2E-002), `tests/e2e/lib/deflate-raw-support-matrix.spec.ts` (11.7-E2E-003)
-  - [ ] PW-Lib deferred placeholder: `tests/e2e/lib/circuit-open.spec.ts` with `test.fixme(...)` and a comment citing Epic 12 (11.7-E2E-001 — keeps the test ID alive in traceability)
-  - [ ] DIST: `tests/integration/dist/tree-shake.test.ts`, `tests/integration/dist/no-node-imports.test.ts`
-  - [ ] DOC: `tests/integration/docs/resume-example.test.ts`, `tests/integration/docs/compression-example.test.ts`, `tests/integration/docs/test-app-readme.test.ts`
-  - [ ] VT: `packages/tranquilload-adapters/src/adapters/s3-multipart-upload-filename-edges.test.ts` (or extend existing s3-multipart test file)
+- [x] Task 1: File layout (AC: all)
+  - [x] PW-Lib: `tests/e2e/lib/simple-http-upload-cross-browser.spec.ts` (11.7-E2E-002), `tests/e2e/lib/deflate-raw-support-matrix.spec.ts` (11.7-E2E-003)
+  - [x] PW-Lib deferred placeholder: `tests/e2e/lib/circuit-open.spec.ts` with `test.fixme(...)` and a comment citing Epic 12 (11.7-E2E-001 — keeps the test ID alive in traceability)
+  - [x] DIST: `tests/integration/dist/tree-shake.test.ts`, `tests/integration/dist/no-node-imports.test.ts`
+  - [x] DOC: `tests/integration/docs/resume-example.test.ts`, `tests/integration/docs/compression-example.test.ts`, `tests/integration/docs/test-app-readme.test.ts`
+  - [x] VT: `packages/tranquilload-adapters/src/protocols/s3-multipart-upload-filename-edges.test.ts` (new file alongside the existing s3-multipart test)
 
-- [ ] Task 2: 11.7-E2E-001 — F#10 CircuitOpen (DEFERRED) (AC: #1)
-  - [ ] Create `tests/e2e/lib/circuit-open.spec.ts` with a `test.fixme("F#10 — CircuitOpenError after 5 consecutive part failures in 10s", ...)` and a TODO comment: `// DEFERRED to Epic 12 per Decision D2 in epics.md. Circuit-breaker wire-up is an Epic 13 prerequisite.`
-  - [ ] Lock the test ID in traceability so future Epic 12 implementers know exactly what to wire
-  - [ ] Effort: ~15 min (placeholder only)
+- [x] Task 2: 11.7-E2E-001 — F#10 CircuitOpen (DEFERRED) (AC: #1)
+  - [x] Created `tests/e2e/lib/circuit-open.spec.ts` with a `test.fixme(...)` and the Epic 12 / Decision D2 comment
+  - [x] Test ID locked in traceability (§2.7 + §3.6) — Epic 12 implementers have the exact wire-up note
+  - [x] Effort: placeholder only
 
-- [ ] Task 3: 11.7-E2E-002 — `simpleHttpUpload` cross-browser (AC: #2)
-  - [ ] Drive `simpleHttpUpload` from PW-Lib (no test-app UI), with a `ReadableStream` body
-  - [ ] Run on Chromium / Firefox / WebKit
-  - [ ] CURRENT BEHAVIOUR: at least one browser will fail because `fetch` rejects a streamed body without `duplex: 'half'`
-  - [ ] Assert THE CURRENT behaviour — `expect(...).rejects.toThrow(/...duplex.../)` or similar; lock the gap
-  - [ ] Add a clear comment: `// Codifies R-P2-4 / Decision D1 / Epic 13 candidate. Flip assertion to upload-completes when the duplex:'half' fix ships.`
-  - [ ] Epic 11 exit criterion explicitly allows WAIVER + Epic 13 ticket
+- [x] Task 3: 11.7-E2E-002 — `simpleHttpUpload` cross-browser (AC: #2)
+  - [x] Drove the streamed-body + `duplex:'half'` path from PW-Lib (no test-app UI) across Chromium / Firefox / WebKit
+  - [x] CURRENT BEHAVIOUR — **empirical finding**: stream-body `Request` CONSTRUCTION succeeds in all 3 engines (the historical construction gap has closed); the real gap is TRANSMISSION over HTTP/1.1. Reframed the spec to probe BOTH construction (locked green per engine) and transmission (locked NOT-uniformly-green) — Pattern 3 honest-scope.
+  - [x] Codifies R-P2-4 / Decision D1 / Epic 13 candidate comment present; transmission matrix flips when the fix ships
 
-- [ ] Task 4: 11.7-E2E-003 — `deflate-raw` support matrix (AC: #3)
-  - [ ] Smoke spec: create a `CompressionStream("deflate-raw")` in each browser; assert it either constructs or throws
-  - [ ] Lock the per-browser support matrix and surface a console warning in the README
-  - [ ] If WebKit lacks support, document it inline (G#3)
+- [x] Task 4: 11.7-E2E-003 — `deflate-raw` support matrix (AC: #3)
+  - [x] Probes `CompressionStream("deflate-raw")` per engine + drives bytes through; locks the 3-engine matrix
+  - [x] README support-matrix section ADDED (addition only)
 
-- [ ] Task 5: 11.7-X-001 — Tree-shake proof (DIST) (AC: #4)
-  - [ ] Add a synthetic consumer file that ONLY imports `@tranquilload/core/oneshot`
-  - [ ] Bundle it with `esbuild` or the test-app's bundler (whatever the DIST harness already uses)
-  - [ ] Assert the resulting bundle does NOT contain identifiers that only exist in multipart code (e.g. `uploadMultipartEffect`, `chunkStream`, `CircuitBreaker`)
-  - [ ] Set a generous size budget (e.g. bundle size < 50% of full-import bundle) to catch regressions
+- [x] Task 5: 11.7-X-001 — Tree-shake proof (DIST) (AC: #4)
+  - [x] Bundler-free closure-walk from `dist/oneshot.mjs` (tsdown emits per-entry bundles + shared chunks) — the DIST harness is bundler-free, so this matches it instead of pulling in esbuild
+  - [x] Asserts the oneshot closure excludes `uploadMultipart` / `uploadMultipartEffect` / `chunkStream` / `makeCircuitBreaker` / `CircuitBreaker`, plus effect-not-inlined (peer-dep contract) + closure < 80% of multipart closure
+  - [x] `effect` is NOT bundled — peer-dep contract holds (no Epic 13 finding here)
 
-- [ ] Task 6: 11.7-X-002 — No `node:*` in browser bundle (DIST) (AC: #4)
-  - [ ] Build the browser-targeting bundle of `@tranquilload/core` AND `@tranquilload/adapters` with `--platform=browser`
-  - [ ] Grep the resulting bundle for `node:*` imports
-  - [ ] Assert: zero matches, EXCEPT when the consumer explicitly imports `@tranquilload/adapters/fromNodeReadable` (allowed boundary)
-  - [ ] Run two cases: (a) consumer doesn't import `fromNodeReadable` → 0 matches; (b) consumer DOES import it → matches confined to that one module
+- [x] Task 6: 11.7-X-002 — No `node:*` in browser bundle (DIST) (AC: #4)
+  - [x] Closure-walk over 11 browser-safe entries (core + adapters) → 0 `node:*` (case a)
+  - [x] `from-node-readable` closure confines `node:stream`; global invariant proves it's the ONLY node importer (case b)
 
-- [ ] Task 7: 11.7-INT-001 — Special-char filenames (AC: #5)
-  - [ ] Parameterized vitest test over `[#, ?, %, +, " ", "café", "🚀", "نص عربي"]`
-  - [ ] Call `s3MultipartUpload({ bucket, key: filename, ... })` and assert the key is URL-encoded correctly for the PUT URL
-  - [ ] Round-trip: HEAD on the resulting object resolves the SAME filename back
-  - [ ] Mock the S3 client / use chaos endpoint to avoid needing MinIO for the unit-level assertion
+- [x] Task 7: 11.7-INT-001 — Special-char filenames (AC: #5)
+  - [x] Parameterized over `[# ? % + " " café 🚀 "نص عربي"]`; raw key reaches `createMultipartUpload`, presigner URL-encodes into the PUT URL, round-trip `decodeURIComponent` resolves the same name
+  - [x] Mocked S3 client + fetch — no MinIO needed
 
-- [ ] Task 8: 11.7-INT-002 — Filename > 1024 chars (AC: #5)
-  - [ ] Call `s3MultipartUpload({ bucket, key: "a".repeat(1025), ... })`
-  - [ ] Assert the lib produces `InitiateUploadError` BEFORE attempting the request (S3 documented 1024-char key limit)
-  - [ ] If the lib does NOT pre-validate, surface as Epic 13 candidate
+- [x] Task 8: 11.7-INT-002 — Filename > 1024 chars (AC: #5)
+  - [x] `key = "a".repeat(1025)` — **the adapter does NOT pre-validate**: locked the CURRENT behaviour (forwards to `createMultipartUpload`; surfaces only S3's rejection, NOT mapped to `InitiateUploadError` in the adapter). `// CURRENT BEHAVIOUR — Epic 13 candidate` comment present.
+  - [x] Epic 13 candidate flagged in report + traceability (pre-flight `InitiateUploadError` guard)
 
-- [ ] Task 9: 11.7-D-001 — Resume example doctest (AC: #6)
-  - [ ] The Epic 10 doctest harness (`spawnSync(process.execPath, [harnessPath])` per MEMORY) compiles fenced `ts` blocks from the README against the published `.d.mts`
-  - [ ] Extend to: extract the resume example, compile, and run against MinIO; assert the example completes a resume
-  - [ ] MinIO requirement: skip if MinIO health check fails (mark as `test.skip` with a clear reason)
+- [x] Task 9: 11.7-D-001 — Resume example doctest (AC: #6)
+  - [x] Extended the shared doctest harness (`spawnSync`) — extracted `doctest-harness.ts` to reuse Story 10.6's compile + harness pipeline
+  - [x] Compile-only leg always runs (README resume block type-checks against `.d.mts`); MinIO end-to-end leg `isMinioReachable()`-gated → graceful skip with clear reason (MinIO down on host)
 
-- [ ] Task 10: 11.7-D-002 — Compression example doctest (AC: #6)
-  - [ ] Extract the README compression example; compile + run
-  - [ ] Assert: output bytes are smaller than input bytes (proof compression actually happened); the size ratio is documented in the example
+- [x] Task 10: 11.7-D-002 — Compression example doctest (AC: #6)
+  - [x] README compression block compiles; `compress("deflate-raw")` resolved via published `CompressionServiceLive` shrinks 64 KiB → < 10% (output < input proven, with strict ratio)
 
-- [ ] Task 11: 11.7-D-003 — Test-app README reproducibility (AC: #6)
-  - [ ] Parse `examples/test-app/README.md` for the setup command sequence
-  - [ ] Run it in a CI sandbox (or assert each step's existence + correctness via a dry-run)
-  - [ ] Assert: a fresh clone + the README sequence brings the test-app to a working state
+- [x] Task 11: 11.7-D-003 — Test-app README reproducibility (AC: #6)
+  - [x] Static/dry-run: every `pnpm <script>` in the test-app README maps to a real root/app script; setup commands present; `minio:up` compose file exists; core+adapters build scripts exist
 
-- [ ] Task 12: Verification
-  - [ ] `pnpm vitest run` green (3 new VT tests including filename edges)
-  - [ ] `pnpm exec playwright test --project=lib tests/e2e/lib/simple-http-upload-cross-browser.spec.ts tests/e2e/lib/deflate-raw-support-matrix.spec.ts` green
-  - [ ] `pnpm vitest run tests/integration/dist tests/integration/docs` green (2 DIST + 3 DOC tests)
-  - [ ] `pnpm turbo typecheck` green
+- [x] Task 12: Verification
+  - [x] vitest green: adapters 55 (11 new filename edges) + core 204 (unchanged) + integration 23 (DIST 9+7 new, DOC 7 incl. 4 new)
+  - [x] `playwright test --project=lib` green: E2E-002 (×4) + E2E-003 (×1) passed, E2E-001 skipped (DEFERRED `test.fixme`)
+  - [x] `pnpm turbo typecheck` green (5/5); new e2e specs type-clean (pre-existing e2e/ui `@support/*` errors are outside the typecheck gate)
 
-- [ ] Task 13: Traceability update
-  - [ ] Append 11.7-E2E-001 (with DEFERRED flag) → 11.7-D-003 rows to `_bmad-output/test-artifacts/traceability/traceability-report-epic-11.md`
+- [x] Task 13: Traceability update
+  - [x] Appended §2.7 forward-matrix (all 11 IDs) + §3.6 reverse-matrix + bumped §1 totals (59 → 69) + §5 sub-gate + §6 next-update
 
 ## Dev Notes
 
@@ -142,15 +131,52 @@ so that the bundle/runtime contract holds across all 3 browsers and the README e
 
 ### Agent Model Used
 
-(to be filled by dev)
+claude-opus-4-8
 
 ### Debug Log References
 
+- DOC harness `effect` resolution: the compression doctest harness imports bare `effect` + `@tranquilload/core/*`. Node resolves a harness file's bare imports relative to the harness FILE, not cwd. Fixed by adding an optional `cwd` param to `runHarness` and writing the harness INTO the DIST fixture dir (which has `effect` + the packed packages installed) when a non-default cwd is given. `__doctest-harness-<id>.mjs` placed in `cwd`.
+- DOC compile preludes: README resume/compression blocks assume `uploadMultipart` + the `s3` adapter object are already in scope. The `...s3` spread injects `chunkSize + initiate + uploadPart + completeUpload` — i.e. the `s3MultipartUpload` RETURN type, not a `Pick<UploadMultipartOptions, ...>` (which omits the required `chunkSize`). Fixed both preludes to `declare const s3: ReturnType<typeof s3MultipartUpload>` and injected the `uploadMultipart` import for the resume block.
+- E2E-002 empirical correction: initial assumption was that Firefox/WebKit throw synchronously on `new Request(url, { body: stream, duplex: "half" })`. PW run proved they CONSTRUCT successfully (`requestConstructed: true`). Reframed the spec (Pattern 3) to lock construction-green per engine + a separate transmission-gap test (streamed PUT over HTTP/1.1 does NOT uniformly transmit).
+
 ### Completion Notes List
+
+- **10/11 IDs GREEN, 1 DEFERRED.** No lib code changed — every test is a surface-area / contract lock.
+- **11.7-E2E-001** — DEFERRED to Epic 12 (`test.fixme`, Decision D2). Tracked in traceability, zero effort consumed.
+- **11.7-E2E-002** — GREEN (4 sub-tests). Empirical finding: the streamed-body CONSTRUCTION gap has closed in all 3 engines; the remaining R-P2-4 gap is TRANSMISSION over HTTP/1.1 (Epic 13 candidate).
+- **11.7-E2E-003** — GREEN. 3-engine `deflate-raw` matrix locked; README support-matrix section added (addition only).
+- **11.7-X-001 / X-002** — GREEN (4 + 3 sub-tests). Bundler-free closure walk over tsdown's emitted per-entry bundles + shared chunks. `effect` is NOT inlined (peer-dep contract holds — no Epic 13 finding). `from-node-readable.mjs` is the ONLY `node:*` importer.
+- **11.7-INT-001** — GREEN (9 sub-tests). Special-char key round-trip via presigner `encodeURIComponent`.
+- **11.7-INT-002** — GREEN (2 sub-tests). **Epic 13 candidate confirmed:** the adapter does NOT pre-validate >1024-char keys; it forwards them to S3 and surfaces only S3's rejection (not mapped to `InitiateUploadError` in the adapter). Current behaviour locked.
+- **11.7-D-001** — GREEN (compile) / SKIP (MinIO run). MinIO is down on this host; the compile-only leg passes. `pnpm minio:up` (sudo) enables the end-to-end leg; `MINIO_REQUIRED=1` makes it hard-fail.
+- **11.7-D-002** — GREEN. README compression example compiles + `compress("deflate-raw")` shrinks 64 KiB of zeros to < 10%.
+- **11.7-D-003** — GREEN (4 sub-tests). Static reproducibility check of the test-app README setup sequence.
+- **Triptyque:** `pnpm turbo build` ✅ · vitest (core 204 + adapters 55 + integration 23) ✅ · PW-Lib 5 green / 1 skip ✅ · `pnpm turbo typecheck` 5/5 ✅.
+- **3 Epic 13 candidates:** (1) `simpleHttpUpload` cross-browser streaming TRANSMISSION over HTTP/1.1; (2) pre-flight `InitiateUploadError` guard for >1024-char keys; (3) per-engine buffered fallback / HTTP/2 negotiation for request streams.
 
 ### Change Log
 
+- 2026-06-02 — Story 11.7 dev. 9 new spec files (2 PW-Lib cross-browser + 1 PW-Lib deferred placeholder + 2 DIST + 3 DOC + 1 VT) + 1 extracted shared DOC harness module. README addition (deflate-raw support matrix). Traceability §2.7 + §3.6 + §1/§5/§6 updates. No lib change. Status ready-for-dev → review.
+
 ### File List
+
+New:
+- `tests/e2e/lib/circuit-open.spec.ts` (11.7-E2E-001 DEFERRED)
+- `tests/e2e/lib/simple-http-upload-cross-browser.spec.ts` (11.7-E2E-002)
+- `tests/e2e/lib/deflate-raw-support-matrix.spec.ts` (11.7-E2E-003)
+- `tests/integration/dist/tree-shake.test.ts` (11.7-X-001)
+- `tests/integration/dist/no-node-imports.test.ts` (11.7-X-002)
+- `tests/integration/docs/doctest-harness.ts` (shared harness extracted from Story 10.6's doctest.test.ts)
+- `tests/integration/docs/resume-example.test.ts` (11.7-D-001)
+- `tests/integration/docs/compression-example.test.ts` (11.7-D-002)
+- `tests/integration/docs/test-app-readme.test.ts` (11.7-D-003)
+- `packages/tranquilload-adapters/src/protocols/s3-multipart-upload-filename-edges.test.ts` (11.7-INT-001 + 11.7-INT-002)
+
+Modified:
+- `README.md` (added deflate-raw browser support matrix — addition only)
+- `_bmad-output/test-artifacts/traceability/traceability-report-epic-11.md` (§2.7, §3.6, §1, §5, §6)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (11.7 → in-progress → review)
+- `_bmad-output/implementation-artifacts/11-7-cross-browser-dist-doc-and-filename-gap-closers.md` (frontmatter baseline_commit, status, tasks, Dev Agent Record)
 
 ## Senior Developer Review (AI)
 

@@ -190,6 +190,18 @@ const { result } = uploadMultipart({
 });
 ```
 
+**`deflate-raw` browser support matrix** (verified by the nightly PW-Lib suite — `11.7-E2E-003`):
+
+| Engine | `CompressionStream("deflate-raw")` |
+|---|---|
+| Chromium | ✅ supported |
+| Firefox | ✅ supported |
+| WebKit (current) | ✅ supported |
+
+Older WebKit releases historically lacked `deflate-raw`. If you must support a
+browser without it, fall back to `compress("gzip")` (universally available) —
+the upload pipeline is otherwise identical.
+
 ---
 
 ## Concepts

@@ -37,8 +37,8 @@ Epic 11 traces ~87 P2 scenarios from `brainstorming-session-2026-05-17-001` (P2 
 | **11.4** Persona journeys | 7 tests | 0 | 0 | — |
 | **11.5** Chaos cluster | 13 tests | 0 | 0 | — |
 | **11.6** Stream/chunking/dual-mode | 28 tests | **29 ✅** (28 IDs; 11.6-INT-018 split into clean + remainder lock) | **29 ✅** (post-review) | None — pure surface-area locks; all 28 IDs covered with no lib change. Codex review: 0H/4M/1L, all 5 fixed inline (test-design rigor only). → **done** |
-| **11.7** Cross-browser + DIST + DOC | 11 tests | 0 | 0 | — |
-| **TOTAL** | 89 (87 + 2 dup) | 59 (66%) | 59 | 1 lib finding so far |
+| **11.7** Cross-browser + DIST + DOC | 11 tests (1 DEFERRED) | **10 ✅** (+1 DEFERRED to Epic 12) | **10 ✅** (D-001 MinIO leg skips; E2E-001 deferred) | None — surface-area/contract locks only. 3 Epic 13 candidates surfaced (simpleHttpUpload HTTP/1.1 transmission, >1024-char key pre-flight guard, request-stream fallback). → **review** |
+| **TOTAL** | 89 (87 + 2 dup) | 69 (78%) | 69 | 1 lib finding so far |
 
 ---
 
@@ -131,6 +131,23 @@ Epic 11 traces ~87 P2 scenarios from `brainstorming-session-2026-05-17-001` (P2 
 
 **Story 11.6 coverage: 29/28 = 100%+ ✅ (clean + remainder split on 11.6-INT-018).** Triptyque (build + vitest 224 tests + typecheck) green pre- AND post-code-review. No lib fix surfaced — all 28 IDs are pure surface-area locks. **Codex code-review (2026-05-23): 0 HIGH / 4 MEDIUM / 1 LOW; all 5 addressed inline** (test-design rigor only — M1/M2 reworked to use gated callbacks for genuine timing boundaries; M3 reframed as URL-independence since Node `Blob.stream` is single-chunk regardless of size; M4 switched INT-023+INT-024 to surgical defect-refusal pattern using `Effect.runPromiseExit` + `Cause.dieOption`/`Cause.defects`; L1 tightened F#61 scope-note wording). Status → **done**.
 
+### 2.7 — Story 11.7 (R-P2-4 HIGH + R-P2-11/12/14 LOW, 11 tests incl. 1 DEFERRED)
+
+| Test ID | Brainstorming origin | Spec path | Status | Notes |
+|---|---|---|---|---|
+| **11.7-E2E-001** | F#10 — `CircuitOpenError` after 5 consecutive part failures in 10s | `tests/e2e/lib/circuit-open.spec.ts:20` (`test.fixme`) | ⏸️ DEFERRED (Epic 12) | Decision D2 — circuit-breaker not wired into the test-app path; `test.fixme` placeholder keeps the ID alive in traceability. No effort consumed in Epic 11. |
+| **11.7-E2E-002** | F#40 / G#2 — `simpleHttpUpload` `ReadableStream` body across engines | `tests/e2e/lib/simple-http-upload-cross-browser.spec.ts:94,103,113,121` | ✅ GREEN (4 sub-tests) | Codifies R-P2-4 / Decision D1. **Empirical finding:** stream-body `Request` CONSTRUCTION succeeds in all 3 engines (the historical construction gap has closed); the remaining gap is TRANSMISSION over HTTP/1.1 (request streams need HTTP/2) — Firefox/WebKit don't both transmit. Epic 13 candidate: flip the transmission matrix when the fix ships. |
+| **11.7-E2E-003** | G#3 — `CompressionStream("deflate-raw")` support per browser | `tests/e2e/lib/deflate-raw-support-matrix.spec.ts:76` | ✅ GREEN | Locks the 3-engine matrix (all support `deflate-raw` today) + drives bytes through. README support-matrix section added (ADDITION only). Complements 10.4-E2E-005. |
+| **11.7-X-001** | G#13 — Tree-shake proof (oneshot-only excludes multipart code) | `tests/integration/dist/tree-shake.test.ts:69,86,98,120` | ✅ GREEN (4 sub-tests) | Bundler-free: follows the emitted `oneshot.mjs` chunk-import closure; asserts zero multipart-only identifiers + effect-not-inlined (peer-dep contract) + closure < 80% of multipart closure. |
+| **11.7-X-002** | G#15 — No `node:*` in browser bundle outside `fromNodeReadable` | `tests/integration/dist/no-node-imports.test.ts:81,96,114` | ✅ GREEN (3 sub-tests) | Case (a) 11 browser-safe entries → 0 `node:*`; case (b) `from-node-readable` closure confines `node:stream`; global invariant: `from-node-readable.mjs` is the ONLY node importer. |
+| **11.7-INT-001** | G#17 — Special-char filenames (`# ? % + space café 🚀 RTL`) | `packages/tranquilload-adapters/src/protocols/s3-multipart-upload-filename-edges.test.ts:40,87` | ✅ GREEN (9 sub-tests) | Raw key reaches `createMultipartUpload` unchanged; presigner URL-encodes into the PUT URL; round-trip `decodeURIComponent` resolves the same name. Mocked S3 — no MinIO. |
+| **11.7-INT-002** | G#19 — Filename > 1024 chars (S3 key limit) | `packages/tranquilload-adapters/src/protocols/s3-multipart-upload-filename-edges.test.ts:99` | ✅ GREEN (2 sub-tests) | **CURRENT-BEHAVIOUR lock + Epic 13 candidate:** the adapter does NOT pre-validate key length — it forwards the 1025-char key to `createMultipartUpload` and surfaces only S3's rejection (NOT mapped to `InitiateUploadError` inside the adapter; that mapping lives in core `uploadMultipart`). Epic 13: add a pre-flight `InitiateUploadError` guard. |
+| **11.7-D-001** | G#25 — Resume example compiles + runs against MinIO | `tests/integration/docs/resume-example.test.ts:63` | ✅ GREEN (compile) / ⏭️ SKIP (MinIO run) | Compile-only assertion always runs (README resume block type-checks against `.d.mts`). The end-to-end MinIO run gracefully skips when MinIO is unreachable (it is, on this host) — `pnpm minio:up` (sudo) enables it; `MINIO_REQUIRED=1` makes it hard-fail. |
+| **11.7-D-002** | G#27 — Compression example compiles + runs (size assertion) | `tests/integration/docs/compression-example.test.ts:41` | ✅ GREEN | README compression block compiles; `compress("deflate-raw")` resolved via published `CompressionServiceLive` shrinks 64 KiB of zeros to < 10% (proves real compression). Harness runs from the DIST fixture dir so bare `effect`/`@tranquilload/*` resolve as a downstream consumer's. |
+| **11.7-D-003** | G#29 — Test-app README reproducibility (CI-runnable) | `tests/integration/docs/test-app-readme.test.ts:41,50,77,90` | ✅ GREEN (4 sub-tests) | Static/dry-run: every `pnpm <script>` in the test-app README maps to a real root/app script; setup commands present; `minio:up` compose file exists; core+adapters build scripts exist. |
+
+**Story 11.7 coverage: 10/10 implemented GREEN + 1 DEFERRED tracked = 11/11 IDs.** 10 IDs are GREEN (E2E-002, E2E-003, X-001, X-002, INT-001, INT-002, D-001 compile, D-002, D-003); 11.7-E2E-001 is DEFERRED to Epic 12 (`test.fixme` placeholder, no effort consumed). 11.7-D-001's MinIO end-to-end leg gracefully skips (MinIO down on this host) — compile-only leg is GREEN. **No lib fix surfaced** — all locks are surface-area/contract codifications. Triptyque green: `pnpm turbo build` + (core 204 + adapters 55 + integration 23 + PW-Lib 5 green / 1 skip) + `pnpm turbo typecheck` 5/5. **3 Epic 13 candidates surfaced inline:** (1) `simpleHttpUpload` cross-browser streaming TRANSMISSION over HTTP/1.1 (E2E-002, R-P2-4 / Decision D1); (2) pre-flight `InitiateUploadError` guard for >1024-char keys (INT-002, R-P2-14); (3) per-engine buffered fallback / HTTP/2 negotiation for request streams (E2E-002). Status → **review** (pending independent code-review).
+
 ---
 
 ## 3. Reverse Matrix — P2 Brainstorming Scenarios → Test ID(s)
@@ -218,9 +235,26 @@ Epic 11 traces ~87 P2 scenarios from `brainstorming-session-2026-05-17-001` (P2 
 
 **Story 11.3 coverage: 6/6 = 100% ✅** — all 6 phase-accurate mapping IDs covered. All passed on first run against the current lib (no lib fix). 3 Epic 13 candidates surfaced inline.
 
-### 3.4 — R-P2-1 / R-P2-3 / R-P2-4+ — NOT YET COVERED
+### 3.6 — R-P2-4 / R-P2-11 / R-P2-12 / R-P2-14 — STORY 11.7 COVERAGE
 
-Remaining HIGH/MEDIUM/LOW P2 risks pending Stories 11.4 / 11.5 / 11.7. See `test-design-epic-11.md` § Coverage Matrix for the full scope.
+| Scenario | Risk | Test ID(s) | Status |
+|---|---|---|---|
+| F#40 / G#2 — `simpleHttpUpload` cross-browser streaming body | R-P2-4 (BUS, HIGH) | 11.7-E2E-002 (×4) | ✅ GREEN — codifies transmission gap (construction gap closed) |
+| F#10 — `CircuitOpenError` (5 failures / 10s) | R-P2-11 (TECH, LOW) | 11.7-E2E-001 | ⏸️ DEFERRED to Epic 12 (`test.fixme`) |
+| G#3 — `deflate-raw` per-browser support | R-P2-12 (OPS, LOW) | 11.7-E2E-003 | ✅ GREEN — 3-engine matrix + README addition |
+| G#13 — Tree-shake (oneshot excludes multipart) | R-P2-14 (OPS, LOW) | 11.7-X-001 (×4) | ✅ GREEN |
+| G#15 — No `node:*` in browser bundle | R-P2-14 | 11.7-X-002 (×3) | ✅ GREEN |
+| G#17 — Special-char filenames | R-P2-14 | 11.7-INT-001 (×9) | ✅ GREEN |
+| G#19 — >1024-char filename | R-P2-14 | 11.7-INT-002 (×2) | ✅ GREEN (current-behaviour lock; Epic 13 pre-flight guard candidate) |
+| G#25 — Resume example doctest | R-P2-14 | 11.7-D-001 | ✅ GREEN (compile) / ⏭️ SKIP (MinIO run) |
+| G#27 — Compression example doctest (size) | R-P2-14 | 11.7-D-002 | ✅ GREEN |
+| G#29 — Test-app README reproducibility | R-P2-14 | 11.7-D-003 (×4) | ✅ GREEN |
+
+**Story 11.7 coverage: 10/10 GREEN + 1 DEFERRED tracked = 11/11 IDs.** No lib fix. 3 Epic 13 candidates surfaced (simpleHttpUpload HTTP/1.1 transmission, >1024-char key pre-flight guard, request-stream per-engine fallback).
+
+### 3.4 — R-P2-1 / R-P2-3 — NOT YET COVERED
+
+Remaining HIGH/MEDIUM/LOW P2 risks pending Stories 11.4 / 11.5. See `test-design-epic-11.md` § Coverage Matrix for the full scope.
 
 ---
 
@@ -240,21 +274,22 @@ This section is updated each time a story surfaces a library bug fixed inline (p
 
 ## 5. Gate Decision
 
-**Status:** IN-PROGRESS (4/7 stories landed `done`)
+**Status:** IN-PROGRESS (4/7 stories landed `done`; 11.7 in `review`)
 **Sub-gate for Story 11.1:** ✅ PASS — 6/6 tests green, real lib finding shipped, triptyque green, code-review approved (L1+L2 fixed inline, L3+L4 informational), status `done`.
 **Sub-gate for Story 11.2:** ✅ PASS — 18/18 tests green (17 VT + 1 PW-Lib), ATDD red phase proved R-P2-2 HIGH contract already met (5/5 green on first run), triptyque green (build + 197 core + 44 adapters + 1 PW-Lib heap + typecheck), no lib fix needed, status `done` (pending code-review).
 **Sub-gate for Story 11.6:** ✅ PASS — 29/28 tests green, triptyque green pre- AND post-Codex-review (build + 224 tests + typecheck), no lib fix needed, code-review 0H/4M/1L with all 5 addressed inline, status `done`.
 **Sub-gate for Story 11.3:** ✅ PASS — 6/6 tests green, triptyque green (build + 204 core + 44 adapters + typecheck), R-P2-6 MEDIUM phase-accurate mapping locks all passed first run, no lib fix needed, 3 Epic 13 candidates surfaced inline, independent Opus code-review Approve 0H/0M/2L (informational, no change), status `done`.
+**Sub-gate for Story 11.7:** ✅ PASS (pending independent code-review) — 10/10 implemented GREEN (+1 DEFERRED to Epic 12), triptyque green (build + core 204 + adapters 55 + integration 23 + PW-Lib 5 green/1 skip + typecheck 5/5), no lib fix needed. R-P2-4 cross-browser gap codified (E2E-002 — transmission, not construction); R-P2-11 CircuitOpen deferred (E2E-001 `test.fixme`); R-P2-12 deflate-raw matrix locked + README addition; R-P2-14 DIST tree-shake/no-node + filename edges + doctest extensions all green. D-001 MinIO end-to-end leg skips (MinIO down on host); 3 Epic 13 candidates surfaced. Status → `review`.
 
 Epic-level gate decision deferred until all 7 stories land. Per `test-design-epic-11.md` § Quality Gate Criteria:
 - All 5 HIGH (Score=6) clusters covered? Story 11.1 covers R-P2-5; Story 11.2 covers R-P2-2; R-P2-1/3/4 still pending.
 - ≥95% pass rate per story? 11.1 = 100% ✅; 11.2 = 100% ✅; 11.3 = 100% ✅; 11.6 = 100% ✅.
 - No P1 regression? Full repo sweep green (249 tests = 204 core + 44 adapters + 1 PW-Lib heap, up from 242 after 11.3). ✅
-- R-P2-4 (`simpleHttpUpload` duplex) status? Deferred to Story 11.7 (D1 in `epics.md`).
-- R-P2-11 (`CircuitOpenError`) status? Waived pending Epic 13 (D2 in `epics.md`).
+- R-P2-4 (`simpleHttpUpload` duplex) status? ✅ Codified by Story 11.7-E2E-002 — empirically, the construction-level gap has closed in all 3 engines; the remaining gap is HTTP/1.1 TRANSMISSION (Epic 13 candidate, D1 in `epics.md`).
+- R-P2-11 (`CircuitOpenError`) status? Deferred to Epic 12 via Story 11.7-E2E-001 `test.fixme` placeholder (D2 in `epics.md`).
 
 ---
 
 ## 6. Next Update
 
-Suggested next: Story 11.7 (Cross-browser + DIST + DOC gap-closers) — DIST + DOC harnesses extend Epic 10 infra and close D1 (`simpleHttpUpload` duplex gap). Then 11.5 (chaos, needs MinIO + per-session chaos endpoint) and 11.4 (PW-UI personas, highest per-test cost). After each lands, append the matching §2.x + §3.x entries and bump §1 totals.
+Story 11.7 landed (`review`). Remaining: 11.5 (chaos, needs MinIO + per-session chaos endpoint) and 11.4 (PW-UI personas, highest per-test cost). After each lands, append the matching §2.x + §3.x entries and bump §1 totals.
