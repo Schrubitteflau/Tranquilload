@@ -34,7 +34,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-14
-last_updated: 2026-05-23 # updated: story 11.2 Codex review 0H/9P/0L — all 9 test-design fixes inline (slow-logger Promise return, exact-sequence deep-equal, Layer.empty CompressionService variant, INT-009 → CompressionServiceLive, INT-003 round-trip, INT-014 race vs 5s, INT-015 gated, INT-016 concurrency proof). Triptyque GREEN, no lib change.
+last_updated: 2026-06-02 # story 11.3 dev complete → review. 6 VT tests (resume-error-edges.test.ts), phase-accurate UploadError mapping locks, no lib change. Triptyque green (build + 204 core + 44 adapters + typecheck).
 project: Tranquilload
 project_key: NOKEY
 tracking_system: file-system
@@ -127,7 +127,7 @@ development_status:
   epic-11: in-progress
   11-1-compression-and-pipeline-error-paths: done
   11-2-layers-logger-cleanup-and-resource-safety: done
-  11-3-resume-reconcile-and-error-mapping-edges: ready-for-dev
+  11-3-resume-reconcile-and-error-mapping-edges: review
   11-4-persona-journeys-ui-flows: ready-for-dev
   11-5-chaos-cluster-intermittent-simultaneous-degraded: ready-for-dev
   11-6-stream-chunking-one-shot-and-dual-mode-edges: done

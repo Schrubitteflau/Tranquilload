@@ -9,12 +9,12 @@ sources:
   - '_bmad-output/brainstorming/brainstorming-session-2026-05-17-001.md'
   - '_bmad-output/planning-artifacts/epics.md'
 artifacts:
-  vitest_test_files_added_this_epic: 10   # +1 with 11.1; +4 with 11.6; +5 with 11.2 (cleanup, layers-composition, compression-service-edges, termination-edges, testclock-schedule) + extensions to logger-service-integration
+  vitest_test_files_added_this_epic: 11   # +1 with 11.1; +4 with 11.6; +5 with 11.2 (cleanup, layers-composition, compression-service-edges, termination-edges, testclock-schedule) + extensions to logger-service-integration; +1 with 11.3 (resume-error-edges)
   playwright_spec_files_added_this_epic: 1 # +1 with 11.2 (cleanup-heap-stability)
   brainstorming_p2_scenarios: 87
-stories_landed: ['11.1', '11.2', '11.6']
-stories_pending: ['11.3', '11.4', '11.5', '11.7']
-gate_decision: 'IN-PROGRESS (3/7 stories landed)'
+stories_landed: ['11.1', '11.2', '11.3', '11.6']
+stories_pending: ['11.4', '11.5', '11.7']
+gate_decision: 'IN-PROGRESS (4/7 stories landed)'
 ---
 
 # Requirements Traceability — Epic 11 (P2 Nightly Coverage)
@@ -33,12 +33,12 @@ Epic 11 traces ~87 P2 scenarios from `brainstorming-session-2026-05-17-001` (P2 
 |---|---:|---:|---:|---|
 | **11.1** Compression & pipeline error paths | 6 tests | **6 ✅** | **6 ✅** (post-review) | Yes — `compress.ts` wraps sync throws into stream-error path. Code review: 0H/0M/4L; L1+L2 fixed inline. → **done** |
 | **11.2** Layers/logger/cleanup | 18 tests | **18 ✅** (17 VT + 1 PW-Lib) | **18 ✅** | None — all 5 R-P2-2 HIGH-cluster tests passed against current lib on first run (ATDD red phase). 13 LOCK tests added on top. → **done** |
-| **11.3** Resume + reconcile edges | 6 tests | 0 | 0 | — |
+| **11.3** Resume + reconcile edges | 6 tests | **6 ✅** | **6 ✅** | None — pure surface-area locks; all 6 phase-accurate mapping IDs passed on first run, no lib change. 3 Epic 13 candidates surfaced inline. → **done** |
 | **11.4** Persona journeys | 7 tests | 0 | 0 | — |
 | **11.5** Chaos cluster | 13 tests | 0 | 0 | — |
 | **11.6** Stream/chunking/dual-mode | 28 tests | **29 ✅** (28 IDs; 11.6-INT-018 split into clean + remainder lock) | **29 ✅** (post-review) | None — pure surface-area locks; all 28 IDs covered with no lib change. Codex review: 0H/4M/1L, all 5 fixed inline (test-design rigor only). → **done** |
 | **11.7** Cross-browser + DIST + DOC | 11 tests | 0 | 0 | — |
-| **TOTAL** | 89 (87 + 2 dup) | 53 (60%) | 53 | 1 lib finding so far |
+| **TOTAL** | 89 (87 + 2 dup) | 59 (66%) | 59 | 1 lib finding so far |
 
 ---
 
@@ -81,6 +81,19 @@ Epic 11 traces ~87 P2 scenarios from `brainstorming-session-2026-05-17-001` (P2 
 | **11.2-E2E-001** | F#84 — 100 sequential uploads → flat heap on Chromium | `tests/e2e/lib/cleanup-heap-stability.spec.ts:35` | ✅ GREEN | ATDD red phase; bench harness at `examples/test-app/bench.{html,ts}` exposes `window.__tlBench__`; ≤ 1.5× heap ratio |
 
 **Story 11.2 coverage: 18/18 = 100% ✅.** ATDD red phase exercised the 5 R-P2-2 HIGH-cluster tests (INT-010/012/013/016/E2E-001) before dev — **all 5 PASSED on first run against the current lib**, confirming the cleanup/resource-safety contract is already met. Same outcome shape as Story 11.6: no lib change, pure surface-area locks. Triptyque (build + vitest 197 core + 44 adapters + PW-Lib heap + typecheck) green. Two reusable patterns flagged inline: (1) `@effect/vitest` `it.effect` injects TestClock → tests with wall-clock `setTimeout` synchronization must use plain vitest `it` + `Effect.runPromise`; (2) `Layer.merge(Default, Override)` is the last-writer-wins primitive — chained `provideLayer` is first-writer-wins. Story → **done** (pending code-review).
+
+### 2.3 — Story 11.3 (R-P2-6 MEDIUM, 6 tests)
+
+| Test ID | Brainstorming origin | Spec path | Status | Notes |
+|---|---|---|---|---|
+| **11.3-INT-001** | F#5 — `PresignedUrlError` inside `uploadPart` wraps as `PartUploadError.cause`, retried uniformly | `packages/tranquilload-core/src/multipart/resume-error-edges.test.ts:41` | ✅ GREEN | Two-pronged: single-attempt → `PartUploadError.cause`; multi-attempt → 3 calls (no fail-fast) → `MaxRetriesExceededError.cause`. Codifies the design-gap; Epic 13 candidate: opt-in fail-fast on PresignedUrlError |
+| **11.3-INT-002** | F#7 — 500 on `/parts` reconcile → `ReconcileError` before any PUT | `packages/tranquilload-core/src/multipart/resume-error-edges.test.ts:83` | ✅ GREEN | Adds call-counter (0 PUTs) over existing variant-only assertion |
+| **11.3-INT-003** | F#12 — resume against deleted uploadId (S3 `NoSuchUpload`) | `packages/tranquilload-core/src/multipart/resume-error-edges.test.ts:111` | ✅ GREEN | Phase-accurate `ReconcileError`, S3-shaped cause preserved; locks no auto-reinit (Epic 13 candidate) |
+| **11.3-INT-004** | F#13 — presigned URL expiry recovered via re-sign-per-attempt | `packages/tranquilload-core/src/multipart/resume-error-edges.test.ts:142` | ✅ GREEN | Effect-channel recovery path; complements Story 10.3-E2E-002 (real MinIO). Asserts UploadCompleted + 2 signs |
+| **11.3-INT-005** | F#14 — stale reconciled part (GC'd) → `InvalidPart` at complete | `packages/tranquilload-core/src/multipart/resume-error-edges.test.ts:181` | ✅ GREEN | Divergence invisible mid-flight; surfaces as `CompleteUploadError`. Epic 13 candidate: detect/re-upload GC'd reconciled part |
+| **11.3-INT-006** | F#15 — 0-parts reconcile == fresh start | `packages/tranquilload-core/src/multipart/resume-error-edges.test.ts:212` | ✅ GREEN | Equivalence proof: empty-reconcile vs no-reconcile produce identical PUT set; explicit `ceil(50/10)=5`. Cross-ref Story 7.2 |
+
+**Story 11.3 coverage: 6/6 = 100% ✅.** All 6 are vitest-integration LOCKs of the phase-accurate `UploadError` mapping (reconcile→`ReconcileError`, uploadPart→`PartUploadError`/`MaxRetriesExceededError`, complete→`CompleteUploadError`). R-P2-6 is MEDIUM — all 6 passed on first run against the current lib; no lib change. Triptyque (build + vitest 204 core + 44 adapters + typecheck) green. 3 Epic 13 candidates surfaced inline (don't re-flag): opt-in fail-fast on `PresignedUrlError` (INT-001), auto-reinit on stale uploadId (INT-003), detect/re-upload GC'd reconciled part (INT-005). Status → **done** (pending code-review).
 
 ### 2.6 — Story 11.6 (R-P2-7 MEDIUM + R-P2-13 LOW, 29 tests)
 
@@ -192,9 +205,22 @@ Epic 11 traces ~87 P2 scenarios from `brainstorming-session-2026-05-17-001` (P2 
 
 **Story 11.2 coverage: 18/18 = 100% ✅** — all 18 IDs covered. ATDD red phase proved R-P2-2 HIGH-cluster contract already met (no lib fix).
 
-### 3.4 — R-P2-1 / R-P2-3 / R-P2-4 / R-P2-6+ — NOT YET COVERED
+### 3.5 — R-P2-6 — STORY 11.3 COVERAGE
 
-Remaining HIGH/MEDIUM/LOW P2 risks pending Stories 11.3 / 11.4 / 11.5 / 11.7. See `test-design-epic-11.md` § Coverage Matrix for the full scope.
+| Brainstorming F# | Test ID(s) | Notes |
+|---|---|---|
+| **F#5** PresignedUrlError in uploadPart → `PartUploadError.cause`, retried uniformly | `multipart/resume-error-edges.test.ts` **11.3-INT-001** ✅ | Design-gap lock; Epic 13 candidate: opt-in fail-fast |
+| **F#7** 500 on `/parts` reconcile → `ReconcileError` before any PUT | `multipart/resume-error-edges.test.ts` **11.3-INT-002** ✅ | Call-counter proves 0 PUTs |
+| **F#12** resume against deleted uploadId (`NoSuchUpload`) | `multipart/resume-error-edges.test.ts` **11.3-INT-003** ✅ | Phase-accurate `ReconcileError`; Epic 13 candidate: auto-reinit |
+| **F#13** presigned URL expiry recovered via re-sign-per-attempt | `multipart/resume-error-edges.test.ts` **11.3-INT-004** ✅ | Complements 10.3-E2E-002 (real MinIO) |
+| **F#14** stale reconciled part (GC'd) → `InvalidPart` at complete | `multipart/resume-error-edges.test.ts` **11.3-INT-005** ✅ | `CompleteUploadError`; Epic 13 candidate: detect/re-upload |
+| **F#15** 0-parts reconcile == fresh start | `multipart/resume-error-edges.test.ts` **11.3-INT-006** ✅ | Empty-vs-no-reconcile equivalence proof |
+
+**Story 11.3 coverage: 6/6 = 100% ✅** — all 6 phase-accurate mapping IDs covered. All passed on first run against the current lib (no lib fix). 3 Epic 13 candidates surfaced inline.
+
+### 3.4 — R-P2-1 / R-P2-3 / R-P2-4+ — NOT YET COVERED
+
+Remaining HIGH/MEDIUM/LOW P2 risks pending Stories 11.4 / 11.5 / 11.7. See `test-design-epic-11.md` § Coverage Matrix for the full scope.
 
 ---
 
@@ -214,15 +240,16 @@ This section is updated each time a story surfaces a library bug fixed inline (p
 
 ## 5. Gate Decision
 
-**Status:** IN-PROGRESS (3/7 stories landed `done`)
+**Status:** IN-PROGRESS (4/7 stories landed `done`)
 **Sub-gate for Story 11.1:** ✅ PASS — 6/6 tests green, real lib finding shipped, triptyque green, code-review approved (L1+L2 fixed inline, L3+L4 informational), status `done`.
 **Sub-gate for Story 11.2:** ✅ PASS — 18/18 tests green (17 VT + 1 PW-Lib), ATDD red phase proved R-P2-2 HIGH contract already met (5/5 green on first run), triptyque green (build + 197 core + 44 adapters + 1 PW-Lib heap + typecheck), no lib fix needed, status `done` (pending code-review).
 **Sub-gate for Story 11.6:** ✅ PASS — 29/28 tests green, triptyque green pre- AND post-Codex-review (build + 224 tests + typecheck), no lib fix needed, code-review 0H/4M/1L with all 5 addressed inline, status `done`.
+**Sub-gate for Story 11.3:** ✅ PASS — 6/6 tests green, triptyque green (build + 204 core + 44 adapters + typecheck), R-P2-6 MEDIUM phase-accurate mapping locks all passed first run, no lib fix needed, 3 Epic 13 candidates surfaced inline, status `done` (pending code-review).
 
 Epic-level gate decision deferred until all 7 stories land. Per `test-design-epic-11.md` § Quality Gate Criteria:
 - All 5 HIGH (Score=6) clusters covered? Story 11.1 covers R-P2-5; Story 11.2 covers R-P2-2; R-P2-1/3/4 still pending.
-- ≥95% pass rate per story? 11.1 = 100% ✅; 11.2 = 100% ✅; 11.6 = 100% ✅.
-- No P1 regression? Full repo sweep green (242 tests, up from 224 after 11.2). ✅
+- ≥95% pass rate per story? 11.1 = 100% ✅; 11.2 = 100% ✅; 11.3 = 100% ✅; 11.6 = 100% ✅.
+- No P1 regression? Full repo sweep green (249 tests = 204 core + 44 adapters + 1 PW-Lib heap, up from 242 after 11.3). ✅
 - R-P2-4 (`simpleHttpUpload` duplex) status? Deferred to Story 11.7 (D1 in `epics.md`).
 - R-P2-11 (`CircuitOpenError`) status? Waived pending Epic 13 (D2 in `epics.md`).
 
@@ -230,4 +257,4 @@ Epic-level gate decision deferred until all 7 stories land. Per `test-design-epi
 
 ## 6. Next Update
 
-Suggested next: Story 11.3 (Resume + reconcile edges) — covers R-P2-6 with 6 VT tests extending Epic 10 resume coverage. Some specs may need MinIO. After 11.3 lands, append §2.3 + §3.5 entries and bump §1 totals (53 → 59).
+Suggested next: Story 11.7 (Cross-browser + DIST + DOC gap-closers) — DIST + DOC harnesses extend Epic 10 infra and close D1 (`simpleHttpUpload` duplex gap). Then 11.5 (chaos, needs MinIO + per-session chaos endpoint) and 11.4 (PW-UI personas, highest per-test cost). After each lands, append the matching §2.x + §3.x entries and bump §1 totals.
