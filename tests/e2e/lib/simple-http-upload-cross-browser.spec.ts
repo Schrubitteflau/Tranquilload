@@ -28,9 +28,16 @@ import { test, expect, chromium, firefox, webkit, type BrowserType } from "@play
 interface StreamBodyProbe {
   /** `new Request(url, { body: stream, duplex: "half" })` succeeded. */
   requestConstructed: boolean
+  /**
+   * Control: a NON-streamed (buffered Uint8Array) PUT to the same endpoint
+   * resolved. Proves the endpoint is reachable, so a streamed-PUT failure can
+   * be attributed to the HTTP/1.1 streaming gap rather than to connectivity.
+   */
+  bufferedTransmitted: boolean
   /** An actual streamed `fetch(...)` over HTTP/1.1 resolved without throwing. */
   transmittedOverHttp1: boolean
   constructError?: string
+  bufferedError?: string
   transmitError?: string
 }
 
@@ -41,7 +48,11 @@ async function probeStreamingBody(
   const browser = await browserType.launch()
   try {
     const page = await browser.newPage()
-    await page.goto("about:blank")
+    // Navigate to the endpoint's ORIGIN so the probe fetches are SAME-ORIGIN.
+    // From `about:blank` a cross-origin fetch to the HTTP/1.1 server is
+    // CORS-blocked and would surface as a generic NetworkError — masking the
+    // streaming-vs-buffered distinction we are trying to measure.
+    await page.goto(new URL(http1Endpoint).origin)
     return await page.evaluate(async (endpoint: string) => {
       const makeStream = () => new Response(new Uint8Array([1, 2, 3])).body!
 
@@ -61,7 +72,23 @@ async function probeStreamingBody(
         constructError = `${err.name}: ${err.message}`
       }
 
-      // Step 2 — actual transmission over plain HTTP/1.1.
+      // Step 2 — buffered control PUT (no stream). A 404/405 RESPONSE counts as
+      // "reachable"; only a thrown network error means unreachable.
+      let bufferedTransmitted = false
+      let bufferedError: string | undefined
+      try {
+        const res = await fetch(endpoint, {
+          method: "PUT",
+          body: new Uint8Array([1, 2, 3]),
+        })
+        await res.text().catch(() => "")
+        bufferedTransmitted = true
+      } catch (e) {
+        const err = e as { name?: string; message?: string }
+        bufferedError = `${err.name}: ${err.message}`
+      }
+
+      // Step 3 — actual streamed transmission over plain HTTP/1.1.
       let transmittedOverHttp1 = false
       let transmitError: string | undefined
       try {
@@ -78,7 +105,14 @@ async function probeStreamingBody(
         transmitError = `${err.name}: ${err.message}`
       }
 
-      return { requestConstructed, transmittedOverHttp1, constructError, transmitError }
+      return {
+        requestConstructed,
+        bufferedTransmitted,
+        transmittedOverHttp1,
+        constructError,
+        bufferedError,
+        transmitError,
+      }
     }, http1Endpoint)
   } finally {
     await browser.close()
@@ -127,6 +161,33 @@ test.describe("R-P2-4 — `simpleHttpUpload` streaming body cross-browser (PW-Li
       probeStreamingBody(firefox, HTTP1_ENDPOINT),
       probeStreamingBody(webkit, HTTP1_ENDPOINT),
     ])
+
+    // Precondition — the endpoint must be REACHABLE (buffered PUT resolves) in
+    // both engines. Without this control a network error (endpoint down) would
+    // set transmittedOverHttp1=false and pass the negative lock for the WRONG
+    // reason. We require connectivity before attributing failure to streaming.
+    expect(
+      fx.bufferedTransmitted,
+      `Firefox buffered PUT must reach the endpoint to evaluate the streaming gap — got ${fx.bufferedError}`,
+    ).toBe(true)
+    expect(
+      wk.bufferedTransmitted,
+      `WebKit buffered PUT must reach the endpoint to evaluate the streaming gap — got ${wk.bufferedError}`,
+    ).toBe(true)
+
+    // The failure must be SPECIFIC to streaming: at least one engine transmits a
+    // buffered body but NOT a streamed one (proves it's the HTTP/1.1 streaming
+    // gap, not connectivity).
+    const streamingSpecificGap =
+      (fx.bufferedTransmitted && !fx.transmittedOverHttp1) ||
+      (wk.bufferedTransmitted && !wk.transmittedOverHttp1)
+    expect(
+      streamingSpecificGap,
+      `Expected at least one of Firefox/WebKit to accept a buffered PUT but reject a ` +
+        `streamed one over HTTP/1.1 (fx: buffered=${fx.bufferedTransmitted} streamed=${fx.transmittedOverHttp1}; ` +
+        `wk: buffered=${wk.bufferedTransmitted} streamed=${wk.transmittedOverHttp1}).`,
+    ).toBe(true)
+
     // Epic 13 candidate: flip to `.toBe(true)` for all engines when the
     // cross-browser streaming-transmission fix ships.
     const bothTransmitted = fx.transmittedOverHttp1 && wk.transmittedOverHttp1

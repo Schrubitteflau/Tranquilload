@@ -4,7 +4,7 @@ baseline_commit: 147903a309b4054a86cc1f4dd7d60ed0d390b8ae
 
 # Story 11.7: Cross-Browser + DIST + DOC + Filename Gap-Closers
 
-Status: review
+Status: done
 
 ## Story
 
@@ -157,6 +157,7 @@ claude-opus-4-8
 ### Change Log
 
 - 2026-06-02 — Story 11.7 dev. 9 new spec files (2 PW-Lib cross-browser + 1 PW-Lib deferred placeholder + 2 DIST + 3 DOC + 1 VT) + 1 extracted shared DOC harness module. README addition (deflate-raw support matrix). Traceability §2.7 + §3.6 + §1/§5/§6 updates. No lib change. Status ready-for-dev → review.
+- 2026-06-02 — Story 11.7 review (independent Opus agent, Changes-Requested → resolved → Approve). M1: replaced 11.7-D-001's tautological "runs end-to-end against MinIO" leg with a real programmatic two-session crash-resume (verified GREEN with `MINIO_REQUIRED=1`). L1: 11.7-E2E-002 transmission lock was passing on cross-origin CORS NetworkErrors (probe ran from `about:blank`) — fixed by navigating the probe to the endpoint origin (same-origin) + a buffered-PUT reachability control + a streaming-specific assertion, so the HTTP/1.1 transmission gap is now genuinely locked. L2 informational (no change). Status review → done.
 
 ### File List
 
@@ -175,9 +176,29 @@ New:
 Modified:
 - `README.md` (added deflate-raw browser support matrix — addition only)
 - `_bmad-output/test-artifacts/traceability/traceability-report-epic-11.md` (§2.7, §3.6, §1, §5, §6)
-- `_bmad-output/implementation-artifacts/sprint-status.yaml` (11.7 → in-progress → review)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (11.7 → in-progress → review → done)
 - `_bmad-output/implementation-artifacts/11-7-cross-browser-dist-doc-and-filename-gap-closers.md` (frontmatter baseline_commit, status, tasks, Dev Agent Record)
+
+Modified during review (M1/L1 fixes):
+- `tests/integration/docs/resume-example.test.ts` (M1 — real two-session MinIO crash-resume replacing the tautology leg)
+- `tests/e2e/lib/simple-http-upload-cross-browser.spec.ts` (L1 — same-origin probe + buffered-PUT reachability control + streaming-specific transmission assertion)
 
 ## Senior Developer Review (AI)
 
-(to be filled at review time)
+**Reviewer:** independent Opus 4.8 agent (fresh context — Codex unavailable; a fresh-context Opus stands in per user direction).
+**Date:** 2026-06-02
+**Initial outcome:** Changes-Requested (1 MEDIUM, 2 LOW). **After fixes: ✅ Approve.**
+
+### Findings & resolution
+
+- **M1 (MEDIUM, FIXED) — 11.7-D-001 "runs end-to-end against MinIO" was a tautology.** Even with MinIO up, the MinIO-gated leg only ran `compileBlock(..., emit:true)` then `expect(reachable).toBe(true)` — it signed no parts, drove no upload, never resumed. AC#6's G#25 ("resume completes against MinIO") was unmet while reporting green. **Fix:** the README block can't be run literally (its session 1 completes the upload, leaving nothing to resume), so the leg was replaced with a genuine programmatic two-session crash-resume reusing the 10.6-D-002 presigner wiring: session 1 PUTs part 1 then stops before `completeUpload`; session 2 calls `uploadMultipart` with `resumeFrom` + `reconcileCompletedParts: () => [part1]` → uploads ONLY part 2 → completes → HEAD/GET asserts full 6 MiB assembly + `uploadedThisSession === [2]`. Verified GREEN with `MINIO_REQUIRED=1` (MinIO would have hard-failed if the resume didn't complete). `tests/integration/docs/resume-example.test.ts`.
+
+- **L1 (LOW→substantive, FIXED) — 11.7-E2E-002 transmission lock could pass for the wrong reason.** Running it surfaced that the probe executed from `about:blank` and fetched cross-origin to `:5173`, so BOTH the buffered and streamed PUTs failed with CORS NetworkErrors — the original lock was passing on connectivity failures, not the HTTP/1.1 streaming gap. **Fix:** the probe now navigates to the endpoint ORIGIN (same-origin fetches), a buffered-PUT control proves reachability before the negative lock counts, and the assertion requires a streaming-SPECIFIC failure (buffered ok + streamed fail). The transmission gap is now genuinely locked (FF/WebKit accept a buffered PUT, reject a streamed one over HTTP/1.1). `tests/e2e/lib/simple-http-upload-cross-browser.spec.ts`.
+
+- **L2 (LOW, no change — concur):** one 11.7-INT-001 sub-case asserts `encodeURIComponent` (a JS builtin), not lib code. Reviewer advised no change; left as documentation of the encoding contract, not counted as adapter coverage.
+
+### Verified clean (no findings)
+
+Tree-shake (X-001, bundler-free closure-walk is sound; `effect` not inlined — peer-dep contract holds), no-node-imports (X-002, `node:*` confined to `from-node-readable`), filename edges (INT-001 real round-trip; INT-002 honestly locks the absence of length pre-validation + flags the Epic 13 guard), compression doctest (D-002, real `deflate-raw` shrink), deflate-raw matrix (E2E-003), deferred placeholder (E2E-001 `test.fixme`), test-app README (D-003 honest static check), the extracted `doctest-harness.ts` (faithful, no drift). Hygiene clean (no forbidden files committed; test-ID + G#/F# prefixes; surgical assertions).
+
+**Triptyque post-fix:** build ✅ · core 204 + adapters 55 + integration 23 (incl. real D-001 round-trip) + PW-Lib 10 green / 1 skip ✅ · typecheck 5/5 ✅. `receiving-code-review` skepticism applied: M1 + L1 were genuine incremental-coverage gaps (L1 in fact exposed a false-positive); L2 correctly left alone.

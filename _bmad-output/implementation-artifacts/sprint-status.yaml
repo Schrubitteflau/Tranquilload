@@ -34,7 +34,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-14
-last_updated: 2026-06-02 # story 11.7 → review. 10/11 IDs green + 1 DEFERRED (E2E-001 → Epic 12). 11 new test files (2 PW-Lib cross-browser + 1 deferred placeholder + 2 DIST + 3 DOC + 1 VT) + shared doctest-harness extraction + README deflate-raw matrix addition. No lib change. 3 Epic 13 candidates (simpleHttpUpload HTTP/1.1 transmission, >1024-char key pre-flight guard, request-stream fallback). D-001 MinIO leg skips (MinIO down). Triptyque green (build + core 204 + adapters 55 + integration 23 + PW-Lib 5/1-skip + typecheck 5/5).
+last_updated: 2026-06-02 # story 11.7 → done. 10/11 IDs green + 1 DEFERRED (E2E-001 → Epic 12). Independent Opus review Changes-Requested → fixed (M1: D-001 tautology → real two-session MinIO crash-resume; L1: E2E-002 was passing on CORS → same-origin genuine transmission lock) → Approve. No lib change. 3 Epic 13 candidates. Triptyque green (build + core 204 + adapters 55 + integration 23 incl. real D-001 + PW-Lib 10/1-skip + typecheck 5/5). 5/7 Epic 11 stories done.
 project: Tranquilload
 project_key: NOKEY
 tracking_system: file-system
@@ -131,5 +131,5 @@ development_status:
   11-4-persona-journeys-ui-flows: ready-for-dev
   11-5-chaos-cluster-intermittent-simultaneous-degraded: ready-for-dev
   11-6-stream-chunking-one-shot-and-dual-mode-edges: done
-  11-7-cross-browser-dist-doc-and-filename-gap-closers: review
+  11-7-cross-browser-dist-doc-and-filename-gap-closers: done
   epic-11-retrospective: optional

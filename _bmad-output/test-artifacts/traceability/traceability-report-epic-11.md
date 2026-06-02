@@ -9,12 +9,12 @@ sources:
   - '_bmad-output/brainstorming/brainstorming-session-2026-05-17-001.md'
   - '_bmad-output/planning-artifacts/epics.md'
 artifacts:
-  vitest_test_files_added_this_epic: 11   # +1 with 11.1; +4 with 11.6; +5 with 11.2 (cleanup, layers-composition, compression-service-edges, termination-edges, testclock-schedule) + extensions to logger-service-integration; +1 with 11.3 (resume-error-edges)
-  playwright_spec_files_added_this_epic: 1 # +1 with 11.2 (cleanup-heap-stability)
+  vitest_test_files_added_this_epic: 16   # +1 11.1; +4 11.6; +5 11.2; +1 11.3 (resume-error-edges); +5 11.7 (filename-edges VT + 2 DIST + 3 DOC incl. extracted doctest-harness)
+  playwright_spec_files_added_this_epic: 4 # +1 11.2 (cleanup-heap-stability); +3 11.7 (circuit-open fixme, simple-http-upload-cross-browser, deflate-raw-support-matrix)
   brainstorming_p2_scenarios: 87
-stories_landed: ['11.1', '11.2', '11.3', '11.6']
-stories_pending: ['11.4', '11.5', '11.7']
-gate_decision: 'IN-PROGRESS (4/7 stories landed)'
+stories_landed: ['11.1', '11.2', '11.3', '11.6', '11.7']
+stories_pending: ['11.4', '11.5']
+gate_decision: 'IN-PROGRESS (5/7 stories landed)'
 ---
 
 # Requirements Traceability — Epic 11 (P2 Nightly Coverage)
@@ -37,7 +37,7 @@ Epic 11 traces ~87 P2 scenarios from `brainstorming-session-2026-05-17-001` (P2 
 | **11.4** Persona journeys | 7 tests | 0 | 0 | — |
 | **11.5** Chaos cluster | 13 tests | 0 | 0 | — |
 | **11.6** Stream/chunking/dual-mode | 28 tests | **29 ✅** (28 IDs; 11.6-INT-018 split into clean + remainder lock) | **29 ✅** (post-review) | None — pure surface-area locks; all 28 IDs covered with no lib change. Codex review: 0H/4M/1L, all 5 fixed inline (test-design rigor only). → **done** |
-| **11.7** Cross-browser + DIST + DOC | 11 tests (1 DEFERRED) | **10 ✅** (+1 DEFERRED to Epic 12) | **10 ✅** (D-001 MinIO leg skips; E2E-001 deferred) | None — surface-area/contract locks only. 3 Epic 13 candidates surfaced (simpleHttpUpload HTTP/1.1 transmission, >1024-char key pre-flight guard, request-stream fallback). → **review** |
+| **11.7** Cross-browser + DIST + DOC | 11 tests (1 DEFERRED) | **10 ✅** (+1 DEFERRED to Epic 12) | **10 ✅** (D-001 MinIO round-trip green; E2E-001 deferred) | None — surface-area/contract locks only. Independent Opus review Changes-Requested → all fixed (M1 D-001 tautology → real two-session resume; L1 E2E-002 was passing on CORS → now same-origin genuine lock) → Approve. 3 Epic 13 candidates surfaced. → **done** |
 | **TOTAL** | 89 (87 + 2 dup) | 69 (78%) | 69 | 1 lib finding so far |
 
 ---
@@ -142,11 +142,18 @@ Epic 11 traces ~87 P2 scenarios from `brainstorming-session-2026-05-17-001` (P2 
 | **11.7-X-002** | G#15 — No `node:*` in browser bundle outside `fromNodeReadable` | `tests/integration/dist/no-node-imports.test.ts:81,96,114` | ✅ GREEN (3 sub-tests) | Case (a) 11 browser-safe entries → 0 `node:*`; case (b) `from-node-readable` closure confines `node:stream`; global invariant: `from-node-readable.mjs` is the ONLY node importer. |
 | **11.7-INT-001** | G#17 — Special-char filenames (`# ? % + space café 🚀 RTL`) | `packages/tranquilload-adapters/src/protocols/s3-multipart-upload-filename-edges.test.ts:40,87` | ✅ GREEN (9 sub-tests) | Raw key reaches `createMultipartUpload` unchanged; presigner URL-encodes into the PUT URL; round-trip `decodeURIComponent` resolves the same name. Mocked S3 — no MinIO. |
 | **11.7-INT-002** | G#19 — Filename > 1024 chars (S3 key limit) | `packages/tranquilload-adapters/src/protocols/s3-multipart-upload-filename-edges.test.ts:99` | ✅ GREEN (2 sub-tests) | **CURRENT-BEHAVIOUR lock + Epic 13 candidate:** the adapter does NOT pre-validate key length — it forwards the 1025-char key to `createMultipartUpload` and surfaces only S3's rejection (NOT mapped to `InitiateUploadError` inside the adapter; that mapping lives in core `uploadMultipart`). Epic 13: add a pre-flight `InitiateUploadError` guard. |
-| **11.7-D-001** | G#25 — Resume example compiles + runs against MinIO | `tests/integration/docs/resume-example.test.ts:63` | ✅ GREEN (compile) / ⏭️ SKIP (MinIO run) | Compile-only assertion always runs (README resume block type-checks against `.d.mts`). The end-to-end MinIO run gracefully skips when MinIO is unreachable (it is, on this host) — `pnpm minio:up` (sudo) enables it; `MINIO_REQUIRED=1` makes it hard-fail. |
+| **11.7-D-001** | G#25 — Resume example compiles + completes a resume against MinIO | `tests/integration/docs/resume-example.test.ts:63,116` | ✅ GREEN (compile + MinIO round-trip) | Compile leg: README resume block type-checks against `.d.mts` (always on). MinIO leg (REVIEW FIX M1): a real **programmatic two-session crash-resume** — session 1 PUTs part 1 then stops before complete; session 2 calls `uploadMultipart` with `resumeFrom` + `reconcileCompletedParts` → uploads ONLY part 2 → completes → HEAD/GET asserts full 6 MiB assembly + `uploadedThisSession === [2]`. Verified GREEN with `MINIO_REQUIRED=1`. Skips gracefully when MinIO is down. (The literal README block can't be run — its session 1 completes the upload, so a real resume needs the programmatic path; honest-scope Pattern 3.) |
 | **11.7-D-002** | G#27 — Compression example compiles + runs (size assertion) | `tests/integration/docs/compression-example.test.ts:41` | ✅ GREEN | README compression block compiles; `compress("deflate-raw")` resolved via published `CompressionServiceLive` shrinks 64 KiB of zeros to < 10% (proves real compression). Harness runs from the DIST fixture dir so bare `effect`/`@tranquilload/*` resolve as a downstream consumer's. |
 | **11.7-D-003** | G#29 — Test-app README reproducibility (CI-runnable) | `tests/integration/docs/test-app-readme.test.ts:41,50,77,90` | ✅ GREEN (4 sub-tests) | Static/dry-run: every `pnpm <script>` in the test-app README maps to a real root/app script; setup commands present; `minio:up` compose file exists; core+adapters build scripts exist. |
 
-**Story 11.7 coverage: 10/10 implemented GREEN + 1 DEFERRED tracked = 11/11 IDs.** 10 IDs are GREEN (E2E-002, E2E-003, X-001, X-002, INT-001, INT-002, D-001 compile, D-002, D-003); 11.7-E2E-001 is DEFERRED to Epic 12 (`test.fixme` placeholder, no effort consumed). 11.7-D-001's MinIO end-to-end leg gracefully skips (MinIO down on this host) — compile-only leg is GREEN. **No lib fix surfaced** — all locks are surface-area/contract codifications. Triptyque green: `pnpm turbo build` + (core 204 + adapters 55 + integration 23 + PW-Lib 5 green / 1 skip) + `pnpm turbo typecheck` 5/5. **3 Epic 13 candidates surfaced inline:** (1) `simpleHttpUpload` cross-browser streaming TRANSMISSION over HTTP/1.1 (E2E-002, R-P2-4 / Decision D1); (2) pre-flight `InitiateUploadError` guard for >1024-char keys (INT-002, R-P2-14); (3) per-engine buffered fallback / HTTP/2 negotiation for request streams (E2E-002). Status → **review** (pending independent code-review).
+**Story 11.7 coverage: 10/10 implemented GREEN + 1 DEFERRED tracked = 11/11 IDs.** 10 IDs are GREEN (E2E-002, E2E-003, X-001, X-002, INT-001, INT-002, D-001 compile + MinIO round-trip, D-002, D-003); 11.7-E2E-001 is DEFERRED to Epic 12 (`test.fixme` placeholder, no effort consumed). **No lib fix surfaced** — all locks are surface-area/contract codifications. Triptyque green: `pnpm turbo build` + (core 204 + adapters 55 + integration 23 + PW-Lib 10 green / 1 skip) + `pnpm turbo typecheck` 5/5. **3 Epic 13 candidates surfaced inline:** (1) `simpleHttpUpload` cross-browser streaming TRANSMISSION over HTTP/1.1 (E2E-002, R-P2-4 / Decision D1); (2) pre-flight `InitiateUploadError` guard for >1024-char keys (INT-002, R-P2-14); (3) per-engine buffered fallback / HTTP/2 negotiation for request streams (E2E-002).
+
+**Independent Opus code-review (2026-06-02): Changes-Requested → all addressed → ✅ Approve.** 1 MEDIUM + 2 LOW:
+- **M1 (FIXED):** 11.7-D-001's "runs end-to-end against MinIO" leg was a tautology (`compileBlock` + `expect(reachable).toBe(true)`) — green even though it drove no resume. Replaced with a genuine programmatic two-session crash-resume against MinIO (verified with `MINIO_REQUIRED=1`). The README block can't be run literally (session 1 completes the upload), so the programmatic path is the honest faithful test for G#25.
+- **L1 (FIXED — turned out substantive):** the E2E-002 transmission lock could pass for the wrong reason. On investigation the probe ran from `about:blank` and fetched cross-origin to `:5173`, so it was passing purely on CORS NetworkErrors, not the HTTP/1.1 streaming gap. Fix: probe navigates to the endpoint ORIGIN (same-origin) + a buffered-PUT control proves reachability + asserts the failure is streaming-specific. Now the transmission gap is genuinely locked (FF/WebKit accept buffered, reject streamed over HTTP/1.1).
+- **L2 (no change — concur):** one INT-001 sub-case asserts `encodeURIComponent` (a JS builtin); reviewer advised no change. Left as documentation; not counted as adapter coverage.
+
+Status → **done**.
 
 ---
 
@@ -246,7 +253,7 @@ Epic 11 traces ~87 P2 scenarios from `brainstorming-session-2026-05-17-001` (P2 
 | G#15 — No `node:*` in browser bundle | R-P2-14 | 11.7-X-002 (×3) | ✅ GREEN |
 | G#17 — Special-char filenames | R-P2-14 | 11.7-INT-001 (×9) | ✅ GREEN |
 | G#19 — >1024-char filename | R-P2-14 | 11.7-INT-002 (×2) | ✅ GREEN (current-behaviour lock; Epic 13 pre-flight guard candidate) |
-| G#25 — Resume example doctest | R-P2-14 | 11.7-D-001 | ✅ GREEN (compile) / ⏭️ SKIP (MinIO run) |
+| G#25 — Resume example doctest | R-P2-14 | 11.7-D-001 | ✅ GREEN (compile + real MinIO two-session crash-resume; review fix M1) |
 | G#27 — Compression example doctest (size) | R-P2-14 | 11.7-D-002 | ✅ GREEN |
 | G#29 — Test-app README reproducibility | R-P2-14 | 11.7-D-003 (×4) | ✅ GREEN |
 
@@ -279,7 +286,7 @@ This section is updated each time a story surfaces a library bug fixed inline (p
 **Sub-gate for Story 11.2:** ✅ PASS — 18/18 tests green (17 VT + 1 PW-Lib), ATDD red phase proved R-P2-2 HIGH contract already met (5/5 green on first run), triptyque green (build + 197 core + 44 adapters + 1 PW-Lib heap + typecheck), no lib fix needed, status `done` (pending code-review).
 **Sub-gate for Story 11.6:** ✅ PASS — 29/28 tests green, triptyque green pre- AND post-Codex-review (build + 224 tests + typecheck), no lib fix needed, code-review 0H/4M/1L with all 5 addressed inline, status `done`.
 **Sub-gate for Story 11.3:** ✅ PASS — 6/6 tests green, triptyque green (build + 204 core + 44 adapters + typecheck), R-P2-6 MEDIUM phase-accurate mapping locks all passed first run, no lib fix needed, 3 Epic 13 candidates surfaced inline, independent Opus code-review Approve 0H/0M/2L (informational, no change), status `done`.
-**Sub-gate for Story 11.7:** ✅ PASS (pending independent code-review) — 10/10 implemented GREEN (+1 DEFERRED to Epic 12), triptyque green (build + core 204 + adapters 55 + integration 23 + PW-Lib 5 green/1 skip + typecheck 5/5), no lib fix needed. R-P2-4 cross-browser gap codified (E2E-002 — transmission, not construction); R-P2-11 CircuitOpen deferred (E2E-001 `test.fixme`); R-P2-12 deflate-raw matrix locked + README addition; R-P2-14 DIST tree-shake/no-node + filename edges + doctest extensions all green. D-001 MinIO end-to-end leg skips (MinIO down on host); 3 Epic 13 candidates surfaced. Status → `review`.
+**Sub-gate for Story 11.7:** ✅ PASS — 10/10 implemented GREEN (+1 DEFERRED to Epic 12), triptyque green (build + core 204 + adapters 55 + integration 23 + PW-Lib 10 green/1 skip + typecheck 5/5), no lib fix needed. R-P2-4 cross-browser gap codified (E2E-002 — transmission, not construction); R-P2-11 CircuitOpen deferred (E2E-001 `test.fixme`); R-P2-12 deflate-raw matrix locked + README addition; R-P2-14 DIST tree-shake/no-node + filename edges + doctest extensions all green. **Independent Opus code-review: Changes-Requested → M1 (D-001 tautology → real two-session MinIO crash-resume) + L1 (E2E-002 passing on CORS → same-origin genuine transmission lock) both fixed, L2 informational → Approve.** D-001 MinIO round-trip now verified GREEN with `MINIO_REQUIRED=1`; 3 Epic 13 candidates surfaced. Status → `done`.
 
 Epic-level gate decision deferred until all 7 stories land. Per `test-design-epic-11.md` § Quality Gate Criteria:
 - All 5 HIGH (Score=6) clusters covered? Story 11.1 covers R-P2-5; Story 11.2 covers R-P2-2; R-P2-1/3/4 still pending.
