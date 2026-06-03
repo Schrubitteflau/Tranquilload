@@ -86,10 +86,13 @@ for (const [engine, browserType] of ENGINES) {
           expect(result.ok).toBe(false)
           expect(result.error?._tag).toBe("AbortError")
           expect(result.abortLatencyMs).not.toBeNull()
+          // Tighter ceiling than the C#8 backoff case (1s, not 2s): here there is
+          // no backoff sleep to interrupt — just an in-flight fetch — so a
+          // responsive abort rejects almost immediately. Sharper regression signal.
           expect(
             result.abortLatencyMs!,
             `abort must stay responsive under 5s latency, got ${result.abortLatencyMs}ms`,
-          ).toBeLessThan(2_000)
+          ).toBeLessThan(1_000)
         },
         engine,
       )

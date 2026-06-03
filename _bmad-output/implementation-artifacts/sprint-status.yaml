@@ -34,7 +34,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-14
-last_updated: 2026-06-03 # story 11.5 → review (chaos cluster, 13 PW-Lib IDs × 3 engines = 39 runs GREEN, no flakes; no lib fix). Triptyque green + chaos-isolation 150/150. Traceability 69 → 82 (92%). 6/7 Epic 11 stories landed; only 11.4 (PW-UI personas) remains.
+last_updated: 2026-06-03 # story 11.5 → done (chaos cluster, 13 PW-Lib IDs × 3 engines = 39 runs GREEN, no flakes; no lib fix). Independent Opus review Approve 0H/0M/3L (2 nits applied, 1 left). Triptyque green + chaos-isolation 150/150. Traceability 69 → 82 (92%). 6/7 Epic 11 stories done; only 11.4 (PW-UI personas) remains.
 project: Tranquilload
 project_key: NOKEY
 tracking_system: file-system
@@ -129,7 +129,7 @@ development_status:
   11-2-layers-logger-cleanup-and-resource-safety: done
   11-3-resume-reconcile-and-error-mapping-edges: done
   11-4-persona-journeys-ui-flows: ready-for-dev
-  11-5-chaos-cluster-intermittent-simultaneous-degraded: review
+  11-5-chaos-cluster-intermittent-simultaneous-degraded: done
   11-6-stream-chunking-one-shot-and-dual-mode-edges: done
   11-7-cross-browser-dist-doc-and-filename-gap-closers: done
   epic-11-retrospective: optional

@@ -4,7 +4,7 @@ baseline_commit: f265ca4fd93dbaf673743e546d6f071f682b5594
 
 # Story 11.5: Chaos Cluster (Intermittent + Simultaneous + Degraded)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -158,4 +158,18 @@ claude-opus-4-8 (Claude Code, in-context dev via `bmad-dev-story`).
 
 ## Senior Developer Review (AI)
 
-(to be filled at review time)
+**Reviewer:** Independent fresh-context Opus agent (Codex unavailable — out of tokens). **Date:** 2026-06-03. **Outcome:** ✅ **Approve** — 0 HIGH / 0 MEDIUM / 3 LOW (nits). Reviewer ran the 13 IDs on Chromium itself (green) and verified the error-mapping assertions against `upload-stream.ts` source.
+
+**Verification the reviewer confirmed (NOT problems):**
+- C#3/C#5 `totalAttempts===3` matches `DEFAULT_RETRY_SCHEDULE = exponential(100ms).compose(recurs(2))` (1 initial + 2 retries).
+- C#4 `PartUploadError` vs C#5 `MaxRetriesExceededError` is a real discriminator (`upload-stream.ts:278` branches on `totalAttempts <= 1`); C#4's `retry:{recurs:0}` forces the single-attempt branch.
+- C#6 `CompleteUploadError` + `causeMessage` genuinely proves complete-phase (not part-phase) failure — not a tautology.
+- C#8 raceFirst lock is real: `<2000ms` vs 10s backoff would genuinely regress under `Effect.race`.
+- `installPutChaos` `url.port === "9000"` matcher correct; `test.afterAll` registered once at file scope (no double-destroy); unique timestamped filenames (no per-test purge).
+
+**LOW findings (2 applied, 1 left as-is per reviewer):**
+- **L1 (APPLIED):** C#13 abort-latency ceiling was shared verbatim with C#8 (2s). Since C#13 has no backoff sleep to interrupt (just an in-flight fetch), tightened to **1s** for a sharper regression signal. Re-verified green ×3 engines.
+- **L2 (APPLIED):** added a one-line comment documenting that `abortT0` is first-write-wins (latency measured from the earliest abort trigger).
+- **L3 (no change — reviewer advised against):** the two-element `toContain` accept-sets for C#18/C#20 (`AbortError`/`InitiateUploadError`; `AbortError`/`CompleteUploadError`) correctly admit the non-deterministic fiber-interrupt-vs-aborted-fetch race; the companion assertions (`completedParts===0 && partAttempts==={}`; `not.toContain("UploadCompleted")`) prevent a false pass. Tightening to a single tag would reintroduce flake.
+
+Status → **done**.

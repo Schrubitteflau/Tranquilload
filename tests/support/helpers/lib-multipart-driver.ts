@@ -153,6 +153,9 @@ export async function driveMultipartInPage(args: DriveArgs): Promise<DriveResult
   const signal = controller.signal
 
   let abortT0: number | null = null
+  // First-write-wins: `abortLatencyMs` is measured from the EARLIEST abort
+  // trigger (matters only if a future spec fires multiple triggers, e.g.
+  // maxConcurrency>1 with several parts failing at once).
   const fireAbort = (): void => {
     if (abortT0 === null) abortT0 = performance.now()
     controller.abort()
