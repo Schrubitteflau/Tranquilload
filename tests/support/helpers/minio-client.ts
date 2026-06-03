@@ -68,6 +68,23 @@ export async function assertObjectBytesEqual(
 }
 
 /**
+ * HEAD an object and return its byte length, or `null` if it does not exist.
+ * Used by Story 11.5 chaos specs to confirm a retried upload landed in full.
+ */
+export async function headObjectSize(
+  client: S3Client,
+  bucket: string,
+  key: string,
+): Promise<number | null> {
+  try {
+    const head = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }))
+    return head.ContentLength ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Best-effort cleanup of `uploads/` prefix between tests.
  * Tests that need a guaranteed-empty bucket should call this in a `beforeEach`.
  */
