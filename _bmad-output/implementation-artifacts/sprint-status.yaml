@@ -34,7 +34,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-14
-last_updated: 2026-06-03 # story 11.5 → done (chaos cluster, 13 PW-Lib IDs × 3 engines = 39 runs GREEN, no flakes; no lib fix). Independent Opus review Approve 0H/0M/3L (2 nits applied, 1 left). Triptyque green + chaos-isolation 150/150. Traceability 69 → 82 (92%). 6/7 Epic 11 stories done; only 11.4 (PW-UI personas) remains.
+last_updated: 2026-06-11 # EPIC 11 COMPLETE → done + retrospective done. Story 11.4 (persona journeys) → done: 7 PW-UI specs ×3 engines = 21/21 GREEN no flakes/skips, no lib change, 3 test-app debug toggles. Independent Opus review Approve 0H/0M/3L. Triptyque green + chaos-isolation 150/150. Traceability 82 → 89 (100%); all 5 HIGH clusters covered (R-P2-1 last, via 11.4-C2). Retro: epic-11-retro-2026-06-11.md. Recommended next: pre-1.0 patch release (ships 11.1 compress fix) → formalize Epic 13 (test-backed candidate backlog) → defer Epic 12 (circuit-breaker).
 project: Tranquilload
 project_key: NOKEY
 tracking_system: file-system
@@ -124,7 +124,7 @@ development_status:
   # Source: P2 subset of _bmad-output/brainstorming/brainstorming-session-2026-05-17-001.md, re-validated 2026-05-21.
   # Open decisions (recorded in epics.md): D1 R-P2-4 simpleHttpUpload duplex → codify gap in 11.7;
   #   D2 R-P2-11 CircuitOpen → defer to Epic 12; D3 Story 11.4 personas → commit to stabilization.
-  epic-11: in-progress
+  epic-11: done
   11-1-compression-and-pipeline-error-paths: done
   11-2-layers-logger-cleanup-and-resource-safety: done
   11-3-resume-reconcile-and-error-mapping-edges: done
@@ -132,4 +132,4 @@ development_status:
   11-5-chaos-cluster-intermittent-simultaneous-degraded: done
   11-6-stream-chunking-one-shot-and-dual-mode-edges: done
   11-7-cross-browser-dist-doc-and-filename-gap-closers: done
-  epic-11-retrospective: optional
+  epic-11-retrospective: done
