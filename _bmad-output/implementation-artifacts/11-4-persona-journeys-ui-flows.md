@@ -1,6 +1,6 @@
 # Story 11.4: Persona Journeys (UI Flows)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -197,4 +197,15 @@ claude-opus-4-8 (Claude Code, in-context dev). Independent review by a fresh-con
 
 ## Senior Developer Review (AI)
 
-(to be filled at review time)
+**Reviewer:** Independent fresh-context Opus `code-reviewer` agent (Codex unavailable). **Date:** 2026-06-11.
+**Verdict: ✅ Approve — 0 HIGH / 0 MEDIUM / 3 LOW (all informational; reviewer advised NO change). No code change applied.**
+
+The reviewer traced each persona's assertion against the lib internals and confirmed **none are tautological** — specifically: B5's part-1 `getProgress` probe provably reads 0 (the `refProgress` Ref is updated only by the `Stream.tap` on `PartCompleted`, AFTER `uploadPart` resolves; concurrency=1 means nothing else completed first); C2's resume provably fails at reconcile (`ListParts`→`NoSuchUpload`→500→`ReconcileError`); A4 genuinely interrupts an in-flight part (slowSign stretches the upload to seconds, the drop registers in ms) and genuinely recovers via the tuned schedule; A1 genuinely fails from the outage (not an already-completed upload); B6's exactly-6-sign-count + ≥4.5s wall-time are tight and timer-robust; B1's `result` promise genuinely escapes to `unhandledrejection`. It also confirmed `debugRetrySchedule()` is type-correct and the faithful realization of AC #5's (literally-invalid) `Schedule.fixed("1 second")` pipe, and that C2's honest current-behaviour lock (reconcile THROWS vs the AC's idealized "returns empty") is the correct call — rewriting it to the idealized AC would make it a *false* lock.
+
+| ID | Severity | Location | Finding | Resolution |
+|---|---|---|---|---|
+| **L1** | LOW | `persona-A1-tunnel-disconnect.spec.ts:69` | Typed-error alternation includes `InitiateUploadError`, which is unreachable since the test waits for `uploadId:` (initiate complete) before dropping. Harmless (never produces a false pass). | **No change** — reviewer advised against it; AC #1 explicitly says "capture CURRENT behaviour", the broader alternation is defensive against engine-timing variance, and the dominant deterministic outcome is `MaxRetriesExceededError`. |
+| **L2** | LOW | `persona-A2-screen-lock.spec.ts:55` | Non-Chromium leg substitutes `slowSignMs` for the CDP CPU throttle — a weaker proxy for "screen-lock starvation". | **No change** — deliberate, documented D3 cross-engine compromise; the Chromium leg carries the faithful throttle and CDP is correctly `browserName`-gated. The non-Chromium leg still locks the byte-equal + no-fiber-crash invariant per engine. |
+| **L3** | LOW (info) | `cross-browser.spec.ts:25` | New shared `findUploadedKey` faithfully extracts this file's inline `findObjectKey`, but `cross-browser.spec.ts` wasn't refactored to consume it. | **No change** — pre-existing file, out of scope; optional future tidy, not a defect. |
+
+**Verification (parent, not delegated):** ran the full PW-UI matrix myself — 21/21 across chromium-ui / firefox-ui / webkit-ui, no flakes, no skips; triptyque (build + core 204 + adapters 55 + integration 23 + typecheck 5/5) green; chaos-isolation re-audited 150/150. The reviewer's static findings independently match my own trace. Status → **done**.
