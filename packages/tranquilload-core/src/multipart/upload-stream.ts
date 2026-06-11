@@ -145,9 +145,9 @@ export const uploadMultipartEffect = (
     retrySchedule = DEFAULT_RETRY_SCHEDULE,
   } = options
 
-  if (!Number.isFinite(chunkSize) || chunkSize <= 0) {
+  if (!Number.isFinite(chunkSize) || chunkSize <= 0 || !Number.isInteger(chunkSize)) {
     throw new TypeError(
-      `uploadMultipart: chunkSize must be a positive finite number, got ${chunkSize}`
+      `uploadMultipart: chunkSize must be a positive finite integer, got ${chunkSize}`
     )
   }
 

@@ -1,4 +1,4 @@
-import { CompleteUploadError, PartUploadError, PresignedUrlError } from "@tranquilload/core/errors"
+import { CompleteUploadError, InitiateUploadError, PartUploadError, PresignedUrlError } from "@tranquilload/core/errors"
 import type { CompletedPart } from "@tranquilload/core/multipart"
 
 export const S3_MIN_PART_SIZE = 5 * 1024 * 1024 // 5 MiB
@@ -36,6 +36,16 @@ export function s3MultipartUpload(options: S3MultipartUploadOptions): {
   if (chunkSize < S3_MIN_PART_SIZE) {
     throw new Error(
       `S3 requires chunkSize >= ${S3_MIN_PART_SIZE} bytes (5 MiB), received ${chunkSize} bytes`
+    )
+  }
+
+  // S3 object keys are limited to 1024 bytes (UTF-8). Reject oversized keys
+  // pre-flight with a typed InitiateUploadError before any createMultipartUpload
+  // request — the key-length limit is S3-specific, so it lives in the adapter.
+  const keyByteLength = new TextEncoder().encode(key).length
+  if (keyByteLength > 1024) {
+    throw new InitiateUploadError(
+      new Error(`S3 object key exceeds the 1024-byte limit: ${keyByteLength} bytes`)
     )
   }
 

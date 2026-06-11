@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { uploadMultipart } from '@tranquilload/core/multipart'
-import { computeOptimalPartSize } from './optimal-part-size.js'
+import { assertS3PartCount, computeOptimalPartSize, S3_MAX_PARTS } from './optimal-part-size.js'
 
 const MB = 1024 * 1024
 
@@ -144,5 +144,31 @@ describe('computeOptimalPartSize', () => {
       expect(seenBodies[i]).toBe(chunkSize)
     }
     expect(seenBodies[seenBodies.length - 1]).toBeLessThanOrEqual(chunkSize)
+  })
+})
+
+describe('assertS3PartCount (Story 13.1 — caller-side 10k-part guard)', () => {
+  it('does not throw when the part count is within the 10,000-part limit', () => {
+    expect(() => assertS3PartCount(10_000 * 5 * MB, 5 * MB)).not.toThrow()
+    expect(() => assertS3PartCount(100 * MB, 5 * MB)).not.toThrow()
+  })
+
+  it('does not throw at exactly S3_MAX_PARTS parts', () => {
+    // ceil(totalBytes / chunkSize) === 10_000 exactly.
+    expect(() => assertS3PartCount(S3_MAX_PARTS * 100, 100)).not.toThrow()
+  })
+
+  it('throws RangeError when the part count exceeds S3_MAX_PARTS', () => {
+    // ceil(totalBytes / chunkSize) === 10_001.
+    expect(() => assertS3PartCount(S3_MAX_PARTS * 100 + 1, 100)).toThrow(RangeError)
+    expect(() => assertS3PartCount(S3_MAX_PARTS * 100 + 1, 100)).toThrow(
+      /exceeding the 10000-part maximum/
+    )
+  })
+
+  it('throws TypeError for a non-positive or non-finite chunkSize', () => {
+    expect(() => assertS3PartCount(1000, 0)).toThrow(TypeError)
+    expect(() => assertS3PartCount(1000, -5)).toThrow(TypeError)
+    expect(() => assertS3PartCount(1000, Number.NaN)).toThrow(TypeError)
   })
 })

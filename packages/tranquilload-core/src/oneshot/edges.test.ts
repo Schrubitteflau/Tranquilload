@@ -118,13 +118,12 @@ describe("uploadOnce — one-shot edges (Story 11.6)", () => {
   )
 
   // --- 11.6-INT-012 (F#39) — one-shot empty stream ---------------------------
-  // Empty source stream → the upload callback receives a stream that yields no
-  // bytes. The lib treats this as a successful one-shot: UploadCompleted is
-  // emitted with `totalParts: 1` (the hardcoded one-shot semantic — there is
-  // exactly one PUT regardless of byte count). Locks current behaviour; a
-  // future refinement to reject empty one-shots is an Epic 13 candidate.
+  // Default (`allowEmpty` unset = true): an empty source is a successful
+  // one-shot — UploadCompleted with `totalParts: 1` (exactly one PUT regardless
+  // of byte count). Epic 13 (Story 13.1) adds the opt-in `allowEmpty: false` to
+  // reject zero-byte uploads pre-flight; the default below is unchanged.
   it.effect(
-    "11.6-INT-012 (F#39) — empty stream: UploadCompleted emitted with totalParts=1 (locks current behaviour)",
+    "11.6-INT-012 (F#39) — empty stream, default allowEmpty: UploadCompleted totalParts=1 (one-shot semantic preserved)",
     () =>
       Effect.gen(function* () {
         let uploadCallbackInvocations = 0
@@ -160,6 +159,68 @@ describe("uploadOnce — one-shot edges (Story 11.6)", () => {
 
         // result === the same UploadCompleted reference.
         expect(res).toBe(evt)
+      }),
+  )
+
+  // allowEmpty: false → empty source rejected pre-flight, before the PUT.
+  it.effect(
+    "11.6-INT-012 (F#39) — empty stream, allowEmpty:false: result rejects with CompleteUploadError, upload callback NOT invoked",
+    () =>
+      Effect.gen(function* () {
+        let uploadCallbackInvocations = 0
+
+        const { events, result } = uploadOnce({
+          stream: emptyStream(),
+          allowEmpty: false,
+          upload: async () => {
+            uploadCallbackInvocations++
+          },
+        })
+
+        const [evts, err] = yield* Effect.all([
+          Effect.promise(() => readAllEvents(events)),
+          Effect.promise(() => result.then(() => null, (e: unknown) => e)),
+        ])
+
+        // Rejection happened pre-flight — the upload callback never ran.
+        expect(uploadCallbackInvocations).toBe(0)
+        // Typed rejection with a descriptive cause.
+        expect(err).toBeInstanceOf(CompleteUploadError)
+        expect((err as CompleteUploadError).cause).toBeInstanceOf(Error)
+        expect(((err as CompleteUploadError).cause as Error).message).toMatch(
+          /empty source stream rejected/,
+        )
+        // events closes cleanly with no events (errors surface via result only).
+        expect(evts).toHaveLength(0)
+      }),
+  )
+
+  // allowEmpty: false on a NON-empty source — the bounded peek must re-prepend
+  // the first chunk so byte-fidelity is preserved and the upload completes.
+  it.effect(
+    "11.6-INT-012 (F#39) — non-empty stream, allowEmpty:false: peek re-prepends, byte-fidelity preserved, completes",
+    () =>
+      Effect.gen(function* () {
+        const sourceBytes = new Uint8Array(64)
+        for (let i = 0; i < 64; i++) sourceBytes[i] = i
+        const observed: number[] = []
+
+        const { result } = uploadOnce({
+          stream: fromBytes(sourceBytes),
+          allowEmpty: false,
+          upload: async (stream) => {
+            const reader = stream.getReader()
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done) break
+              for (const b of value) observed.push(b)
+            }
+          },
+        })
+
+        const res = yield* Effect.promise(() => result)
+        expect((res as UploadCompleted)._tag).toBe("UploadCompleted")
+        expect(observed).toEqual(Array.from(sourceBytes))
       }),
   )
 })

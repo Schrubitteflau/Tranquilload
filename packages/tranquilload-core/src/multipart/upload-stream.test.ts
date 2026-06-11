@@ -394,17 +394,17 @@ describe("uploadMultipartEffect with circuitBreaker", () => {
 
     it("throws TypeError when chunkSize is negative", () => {
       expect(() => uploadMultipartEffect({ ...baseOptions, chunkSize: -1 }))
-        .toThrow(/positive finite number/)
+        .toThrow(/positive finite integer/)
     })
 
     it("throws TypeError when chunkSize is NaN", () => {
       expect(() => uploadMultipartEffect({ ...baseOptions, chunkSize: NaN }))
-        .toThrow(/positive finite number/)
+        .toThrow(/positive finite integer/)
     })
 
     it("throws TypeError when chunkSize is Infinity", () => {
       expect(() => uploadMultipartEffect({ ...baseOptions, chunkSize: Infinity }))
-        .toThrow(/positive finite number/)
+        .toThrow(/positive finite integer/)
     })
 
     it("accepts a positive integer chunkSize (control)", () => {

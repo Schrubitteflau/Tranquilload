@@ -258,48 +258,25 @@ describe("uploadMultipartEffect — chunking edges (Story 11.6)", () => {
   )
 
   // --- 11.6-INT-015 (F#44) — non-integer chunkSize 1024.7 -------------------
-  // Locks CURRENT behaviour: the validation in upload-stream.ts only rejects
-  // non-finite / non-positive chunkSize, so 1024.7 is accepted. chunkStream's
-  // internal `buffer.slice(0, 1024.7)` truncates via ToIntegerOrInfinity (1024
-  // bytes per emit), and the `buffer.length >= 1024.7` comparison delays emit
-  // until buffer reaches 1025 bytes. Net: byte-fidelity preserved, no crash,
-  // upload completes. Updating this behaviour is an Epic 13 candidate (reject
-  // non-integer chunkSize at the API boundary).
-  it.effect(
-    "11.6-INT-015 (F#44) — non-integer chunkSize 1024.7: accepted, byte-fidelity preserved (locks current behaviour)",
-    () =>
-      Effect.gen(function* () {
-        const totalBytes = 2048
-        const sourceBytes = new Uint8Array(totalBytes)
-        for (let i = 0; i < totalBytes; i++) sourceBytes[i] = i % 251
+  // Epic 13 (Story 13.1): a non-integer chunkSize is REJECTED pre-flight. The
+  // guard in upload-stream.ts (`!Number.isInteger(chunkSize)`) throws a
+  // TypeError synchronously when uploadMultipartEffect is constructed — before
+  // any chunk is read or part uploaded.
+  it("11.6-INT-015 (F#44) — non-integer chunkSize 1024.7: rejected pre-flight with TypeError, no uploadPart call", () => {
+    let uploadPartCalls = 0
+    const construct = () =>
+      uploadMultipartEffect({
+        stream: fromBytes(new Uint8Array(2048)),
+        chunkSize: 1024.7,
+        uploadPart: () => {
+          uploadPartCalls++
+          return "etag"
+        },
+        completeUpload: () => {},
+      })
 
-        const collectedBodies: Uint8Array[] = []
-
-        yield* runUpload({
-          stream: fromBytes(sourceBytes),
-          chunkSize: 1024.7,
-          uploadPart: (_partNumber, chunk) => {
-            // Defensive copy — chunk may be a view backed by a moving buffer.
-            collectedBodies.push(new Uint8Array(chunk))
-            return "etag"
-          },
-          completeUpload: () => {},
-        })
-
-        // All input bytes preserved when re-concatenated.
-        const totalCollected = collectedBodies.reduce(
-          (sum, c) => sum + c.length,
-          0,
-        )
-        expect(totalCollected).toBe(totalBytes)
-
-        const reconstructed = new Uint8Array(totalCollected)
-        let offset = 0
-        for (const c of collectedBodies) {
-          reconstructed.set(c, offset)
-          offset += c.length
-        }
-        expect(reconstructed).toEqual(sourceBytes)
-      }),
-  )
+    expect(construct).toThrow(TypeError)
+    expect(construct).toThrow(/positive finite integer/)
+    expect(uploadPartCalls).toBe(0)
+  })
 })

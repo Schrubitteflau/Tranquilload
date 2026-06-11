@@ -1,10 +1,10 @@
 ---
-baseline_commit: 130156e118bf5fb54f296ae99eac30c6917fe7e3
+baseline_commit: 792b037
 ---
 
 # Story 13.1: API-Boundary Input Guards
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -26,41 +26,41 @@ so that malformed configuration surfaces as a typed error/throw BEFORE any netwo
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Non-integer `chunkSize` guard (AC: #1)
-  - [ ] Extend the guard at `upload-stream.ts:148` to `!Number.isFinite(chunkSize) || chunkSize <= 0 || !Number.isInteger(chunkSize)` and update the `TypeError` message to mention "positive finite integer"
-  - [ ] Flip `chunking-edges.test.ts` 11.6-INT-015 (F#44): assert `uploadMultipart` throws/rejects `TypeError` for `chunkSize: 1024.7`, no `uploadPart` call; remove the "locks current behaviour" comment block
-  - [ ] Confirm `chunkSize: 1` (11.6-INT-013) still passes unchanged (integer, valid)
+- [x] Task 1: Non-integer `chunkSize` guard (AC: #1)
+  - [x] Extended the guard at `upload-stream.ts:148` to `!Number.isFinite(chunkSize) || chunkSize <= 0 || !Number.isInteger(chunkSize)`; message now "positive finite integer"
+  - [x] Flipped `chunking-edges.test.ts` 11.6-INT-015 (F#44): plain `it` asserting `uploadMultipartEffect` throws `TypeError` (sync, at construction) for `chunkSize: 1024.7`, 0 `uploadPart` calls; old byte-fidelity lock removed
+  - [x] `chunkSize: 1` (11.6-INT-013) still passes (integer, valid). Also updated 3 pre-existing message-regex assertions in `upload-stream.test.ts` (negative/NaN/Infinity) `number` → `integer`
 
-- [ ] Task 2: >1024-char S3 key pre-flight guard (AC: #2)
-  - [ ] Add a key-length guard next to the existing `chunkSize < S3_MIN_PART_SIZE` check (`s3-multipart-upload.ts:36`). S3's documented limit is **1024 bytes** (UTF-8), not 1024 chars — use a byte-length check (`new TextEncoder().encode(key).length > 1024`), document the byte-vs-char nuance
-  - [ ] Throw `new InitiateUploadError(new Error("S3 object key exceeds 1024 bytes: <len>"))` — see **DD3** re: the existing sibling guard throwing plain `Error`
-  - [ ] Flip `s3-multipart-upload-filename-edges.test.ts` 11.7-INT-002 (G#19): assert pre-flight `InitiateUploadError`, `createMultipartUpload` NOT called (mock call-counter = 0); remove the "Epic 13 candidate" comment
-  - [ ] Confirm the special-char key test (11.7-INT-001) still passes unchanged
+- [x] Task 2: >1024-byte S3 key pre-flight guard (AC: #2)
+  - [x] Added a byte-length guard (`new TextEncoder().encode(key).length > 1024`) next to the existing `chunkSize < S3_MIN_PART_SIZE` check at construction; documented the byte-vs-char nuance in a comment
+  - [x] Throws `new InitiateUploadError(new Error("S3 object key exceeds the 1024-byte limit: <len> bytes"))` (DD3: new guard uses the typed error; existing sibling chunkSize guard left as plain `Error` — out of scope)
+  - [x] Flipped `s3-multipart-upload-filename-edges.test.ts` 11.7-INT-002 (G#19): test 1 asserts construction throws `InitiateUploadError` + `createMultipartUpload` not called; test 2 repurposed as a 1024-byte boundary test (passes through)
+  - [x] Special-char key test (11.7-INT-001) still passes unchanged
 
-- [ ] Task 3: S3 10k-part caller-side helper (AC: #3) — see **DD1**
-  - [ ] Add `assertS3PartCount(totalBytes: number, chunkSize: number): void` (or extend `computeOptimalPartSize`) in `optimal-part-size.ts` — throw when `Math.ceil(totalBytes / chunkSize) > 10_000`
-  - [ ] Export it from the adapters barrel (check `packages/tranquilload-adapters/src/index.ts` export convention; `types` before `import`/`require` in package.json exports per MEMORY)
-  - [ ] New test in `optimal-part-size.test.ts` (F#42-adjacent): `assertS3PartCount` throws at >10k, passes at exactly 10k and below
-  - [ ] Update README/doctest if `computeOptimalPartSize` examples reference part-count (only if touched)
+- [x] Task 3: S3 10k-part caller-side helper (AC: #3) — DD1
+  - [x] Added `assertS3PartCount(totalBytes, chunkSize): void` + `S3_MAX_PARTS = 10_000` in `optimal-part-size.ts` — throws `RangeError` when `Math.ceil(totalBytes / chunkSize) > 10_000`, `TypeError` on bad chunkSize
+  - [x] Ships through the existing `@tranquilload/adapters/optimalPartSize` entry (same file → tsdown entry); no package.json change needed
+  - [x] 4 new tests in `optimal-part-size.test.ts`: within-limit, exactly-10k boundary, >10k RangeError, bad-chunkSize TypeError
+  - [x] No README/doctest reference to part-count — nothing to update
 
-- [ ] Task 4: Empty one-shot policy (AC: #4) — **DD2 RESOLVED = (a) `allowEmpty` opt-in (2026-06-11, Project Lead)**
-  - [ ] Add `allowEmpty?: boolean` to `UploadOnceOptions` (`oneshot/upload.ts` + `index.ts` dual-API), **default `true`** = current `totalParts:1` behaviour → **non-breaking**
-  - [ ] Document the foot-gun in the option's TSDoc: "an empty source still emits a successful one-shot (one PUT regardless of byte count); set `allowEmpty: false` to reject zero-byte uploads"
-  - [ ] When `allowEmpty: false` AND the source yields zero bytes, fail with a typed error BEFORE the PUT. Enforcement note: the lib never sees the bytes today (user owns `upload(stream)`), so rejection requires reading the FIRST chunk to test for done-with-zero-bytes (a bounded first-chunk peek, then re-prepend the chunk to the stream). This is a *minimal* peek — NOT the full tee/buffer of rejected option (b). If a clean re-prepend isn't achievable without risking backpressure, keep `allowEmpty:false` as documented-but-unenforced and record the limitation in Completion Notes (honest-scope, MEMORY Pattern 3)
-  - [ ] Flip/refine `oneshot/edges.test.ts` 11.6-INT-012 (F#39): default arm (`allowEmpty` unset) still asserts `UploadCompleted totalParts:1`; add an `allowEmpty: false` arm asserting the typed rejection (or the documented limitation if enforcement is deferred)
+- [x] Task 4: Empty one-shot policy (AC: #4) — DD2 = (a) `allowEmpty` opt-in
+  - [x] Added `allowEmpty?: boolean` to `UploadOnceOptions` (flows through `uploadOnce` public API via the existing `...options` spread), default `true` → non-breaking
+  - [x] TSDoc documents the one-shot foot-gun + the `allowEmpty: false` opt-out
+  - [x] Implemented enforcement via a bounded first-chunk peek (`peekNonEmpty`, demand-driven `pull`, skips leading zero-length chunks, re-prepends the first non-empty chunk). Empty → `CompleteUploadError`. **Enforcement WORKS** — no honest-scope fallback needed
+  - [x] `oneshot/edges.test.ts` 11.6-INT-012: default arm preserved (`totalParts:1`); +2 arms — `allowEmpty:false` empty → `CompleteUploadError`, callback NOT invoked; `allowEmpty:false` non-empty → peek re-prepends, byte-fidelity preserved, completes
 
-- [ ] Task 5: Changesets (pre-1.0 PATCH — MEMORY: pre-1.0 peerDep changesets MUST be `patch`)
-  - [ ] `@tranquilload/core` patch changeset (chunkSize guard; empty-one-shot if DD2 changes core)
-  - [ ] `@tranquilload/adapters` patch changeset (S3 key guard; 10k helper)
-  - [ ] Note in changeset: these reject previously-accepted-but-invalid input — technically breaking but pre-1.0 patch per the versioning rule
+- [x] Task 5: Changesets (pre-1.0 PATCH)
+  - [x] `.changeset/epic13-core-input-guards.md` — `@tranquilload/core` patch (chunkSize guard + allowEmpty)
+  - [x] `.changeset/epic13-adapters-s3-guards.md` — `@tranquilload/adapters` patch (S3 key guard + assertS3PartCount)
+  - [x] Both note the reject-previously-accepted-input nuance; pre-1.0 patch per the versioning rule
 
-- [ ] Task 6: Triptyque verification (MEMORY: mandatory)
-  - [ ] `pnpm turbo build` green
-  - [ ] `pnpm -r test` green (core + adapters; updated + new tests)
-  - [ ] `pnpm turbo typecheck` green
+- [x] Task 6: Triptyque verification
+  - [x] `pnpm turbo build` green (2/2)
+  - [x] `pnpm -r test` green — core 206/206, adapters 59/59
+  - [x] `pnpm turbo typecheck` green (5/5)
 
-- [ ] Task 7: Traceability
-  - [ ] Record the 4 flips/additions (start `traceability-report-epic-13.md` or note in the story) — note 11.6-INT-015, 11.7-INT-002, 11.6-INT-012 flipped; 10k helper test added
+- [x] Task 7: Traceability
+  - [x] Recorded below (Completion Notes): 11.6-INT-015, 11.7-INT-002, 11.6-INT-012 flipped; assertS3PartCount tests added. Epic 13 traceability report deferred to first review (no `traceability-report-epic-13.md` scaffold yet)
 
 ## Dev Notes
 
@@ -130,8 +130,38 @@ claude-opus-4-8 (Opus 4.8) — dev per the permanent Epics 6–9 rule (Opus for 
 
 ### Debug Log References
 
+- `pnpm -r test` (1st run): 3 FAIL in `upload-stream.test.ts` — pre-existing negative/NaN/Infinity chunkSize tests asserted the old `/positive finite number/` message; my message change to "integer" broke the regex. Fixed (regex → `/positive finite integer/`); values still correctly rejected.
+- `pnpm -r test` (2nd run): ✅ core 206/206, adapters 59/59.
+- `pnpm turbo build` ✅ 2/2 · `pnpm turbo typecheck` ✅ 5/5.
+
 ### Completion Notes List
+
+- **First behaviour-CHANGING Epic 13 story — all 4 guards landed, 3 locking tests flipped + 1 helper added.** Unlike Epic 11's surface-area locks, this story changed the lib AND inverted the existing assertions (no duplicate tests).
+- **Guard 1 (non-integer chunkSize):** extended the existing sync `TypeError` guard at `upload-stream.ts:148` with `!Number.isInteger`. The guard throws at construction (when `uploadMultipartEffect(options)` is evaluated), so 11.6-INT-015 flipped to a plain `it` with `expect(construct).toThrow(TypeError)` + `/positive finite integer/` + 0 uploadPart calls.
+- **Guard 2 (>1024-byte key):** byte-length guard (`TextEncoder`) at `s3MultipartUpload` construction, throwing `InitiateUploadError` before any SDK call. 11.7-INT-002's two tests: test-1 flipped to assert construction throws + `createMultipartUpload` not called; test-2 (formerly "S3 rejects oversized key" — now unreachable with a pre-flight guard) repurposed as a 1024-byte boundary pass-through test.
+- **Guard 3 (10k-part):** new `assertS3PartCount` + `S3_MAX_PARTS` in `optimal-part-size.ts` (DD1: caller-side, since the adapter never receives `totalBytes`). `RangeError` on overflow, `TypeError` on bad chunkSize. Ships via the existing `./optimalPartSize` entry — no package.json change. **Additive** (4 new tests), not a flip — 11.6-INT-013's 8-byte case never reaches 10k.
+- **Guard 4 (empty one-shot, DD2 = a):** `allowEmpty?: boolean` (default `true`, non-breaking) on `UploadOnceOptions`. `allowEmpty: false` enforcement implemented via `peekNonEmpty` — a **bounded** first-chunk peek (demand-driven `pull`, re-prepends the first non-empty chunk, skips leading zero-length chunks). Empty → `CompleteUploadError`. The honest-scope fallback (documented-but-unenforced) was NOT needed — enforcement works, proven by the byte-fidelity arm. The peek runs ONLY on the opt-in path; the default path is byte-for-byte untouched (zero regression risk).
+- **DD3:** new key guard uses `InitiateUploadError` per AC; the existing sibling `chunkSize < S3_MIN_PART_SIZE` guard still throws plain `Error` — upgrading it is out of scope (flagged).
+- **Traceability flips:** 11.6-INT-015 (F#44), 11.7-INT-002 (G#19), 11.6-INT-012 (F#39) flipped from "documents gap" → "validates fix"; `assertS3PartCount` tests added (F#42-adjacent). No `traceability-report-epic-13.md` scaffolded yet — defer to review/retro.
+- **Scope note:** e2e/integration tiers (`tests/`, MinIO/Playwright) NOT run — out of scope per the story (all 4 guards are unit-level; S3 mocked). Triptyque (build+test+typecheck) is the gate for this story.
+- **Reviewer flags:** (1) verify the `peekNonEmpty` cancel/error propagation is sound (reader lock release on cancel); (2) confirm `InitiateUploadError` at construction-time (vs initiate-phase) is acceptable semantically; (3) the boundary repurpose of 11.7-INT-002 test-2 — confirm it still adds incremental value over test-1.
 
 ### Change Log
 
+- 2026-06-11 — Story 13.1 dev (Opus 4.8): 4 API-boundary guards. **Lib:** `upload-stream.ts` (non-integer chunkSize), `s3-multipart-upload.ts` (>1024-byte key → InitiateUploadError), `optimal-part-size.ts` (assertS3PartCount + S3_MAX_PARTS), `oneshot/upload.ts` (allowEmpty opt-in + peekNonEmpty). **Tests:** flipped 11.6-INT-015, 11.7-INT-002 (×2), 11.6-INT-012 (default + 2 arms); added 4 assertS3PartCount tests; fixed 3 message regexes in upload-stream.test.ts. **2 patch changesets.** Triptyque green (build 2/2, core 206/206, adapters 59/59, typecheck 5/5). No e2e (out of scope).
+
 ### File List
+
+- **Modified (lib):** `packages/tranquilload-core/src/multipart/upload-stream.ts`
+- **Modified (lib):** `packages/tranquilload-core/src/oneshot/upload.ts`
+- **Modified (lib):** `packages/tranquilload-adapters/src/protocols/s3-multipart-upload.ts`
+- **Modified (lib):** `packages/tranquilload-adapters/src/resilience/optimal-part-size.ts`
+- **Modified (test):** `packages/tranquilload-core/src/multipart/chunking-edges.test.ts`
+- **Modified (test):** `packages/tranquilload-core/src/multipart/upload-stream.test.ts`
+- **Modified (test):** `packages/tranquilload-core/src/oneshot/edges.test.ts`
+- **Modified (test):** `packages/tranquilload-adapters/src/protocols/s3-multipart-upload-filename-edges.test.ts`
+- **Modified (test):** `packages/tranquilload-adapters/src/resilience/optimal-part-size.test.ts`
+- **Added:** `.changeset/epic13-core-input-guards.md`
+- **Added:** `.changeset/epic13-adapters-s3-guards.md`
+- **Modified:** `_bmad-output/implementation-artifacts/13-1-api-boundary-input-guards.md` (this file)
+- **Modified:** `_bmad-output/implementation-artifacts/sprint-status.yaml` (13-1 → in-progress → review)

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { InitiateUploadError } from "@tranquilload/core/errors"
 import { s3MultipartUpload } from "./s3-multipart-upload.js"
 
 /**
@@ -96,65 +97,50 @@ describe("11.7-INT-001 (G#17) — special-character filenames", () => {
   })
 })
 
-describe("11.7-INT-002 (G#19) — filename exceeding the S3 1024-char key limit", () => {
+describe("11.7-INT-002 (G#19) — filename exceeding the S3 1024-byte key limit", () => {
   it(
-    "11.7-INT-002 (G#19) — CURRENT BEHAVIOUR: adapter does NOT pre-validate >1024-char keys (Epic 13 candidate)",
+    "11.7-INT-002 (G#19) — >1024-byte key rejected pre-flight with InitiateUploadError, no createMultipartUpload call",
     async () => {
-      // S3 documents a 1024-byte key limit. The adapter performs NO client-side
-      // length validation today: it forwards the oversized key straight to
-      // `createMultipartUpload` and surfaces only whatever S3 returns.
-      //
-      // This test LOCKS that current behaviour. The desired end-state — a
-      // pre-flight guard that rejects >1024-char keys with `InitiateUploadError`
-      // BEFORE any request — is an Epic 13 candidate (G#19). When that guard
-      // ships, flip this test to assert the pre-flight rejection.
+      // Epic 13 (Story 13.1): the adapter pre-validates the S3 key length (S3's
+      // documented 1024-byte limit) at construction and throws
+      // `InitiateUploadError` BEFORE any request. `createMultipartUpload` is
+      // never reached.
       const longKey = "a".repeat(1025)
       const s3Client = makeMockS3Client()
 
-      const adapter = s3MultipartUpload({
-        bucket: "my-bucket",
-        key: longKey,
-        getPresignedUrl: vi.fn(),
-        s3Client,
-      })
+      expect(() =>
+        s3MultipartUpload({
+          bucket: "my-bucket",
+          key: longKey,
+          getPresignedUrl: vi.fn(),
+          s3Client,
+        }),
+      ).toThrow(InitiateUploadError)
 
-      // No synchronous guard at construction time.
-      // initiate() forwards the oversized key without pre-validation.
-      await adapter.initiate()
-      expect(s3Client.createMultipartUpload).toHaveBeenCalledWith({
-        Bucket: "my-bucket",
-        Key: longKey,
-      })
-      // The key reached the SDK call verbatim — proving the absence of a
-      // length guard (would have thrown before this point if one existed).
-      expect(
-        (s3Client.createMultipartUpload.mock.calls[0]![0] as { Key: string }).Key.length,
-      ).toBe(1025)
+      // Guard fired pre-flight — the SDK was never called.
+      expect(s3Client.createMultipartUpload).not.toHaveBeenCalled()
     },
   )
 
   it(
-    "11.7-INT-002 (G#19) — when S3 rejects the oversized key, the adapter surfaces the rejection",
+    "11.7-INT-002 (G#19) — boundary: a 1024-byte key passes the guard and forwards to createMultipartUpload",
     async () => {
-      // Models S3 (MinIO) refusing a >1024-char key: the adapter currently lets
-      // the raw rejection propagate from `createMultipartUpload`. (It is NOT
-      // mapped to InitiateUploadError inside the adapter — that mapping lives in
-      // the core `uploadMultipart` orchestration, not the adapter.)
-      const longKey = "a".repeat(1025)
-      const s3Client = makeMockS3Client({
-        createMultipartUpload: vi
-          .fn()
-          .mockRejectedValue(new Error("KeyTooLongError: Your key is too long")),
-      })
+      // Exactly at the limit (1024 bytes) is allowed; only >1024 is rejected.
+      const boundaryKey = "a".repeat(1024)
+      const s3Client = makeMockS3Client()
 
       const adapter = s3MultipartUpload({
         bucket: "my-bucket",
-        key: longKey,
+        key: boundaryKey,
         getPresignedUrl: vi.fn(),
         s3Client,
       })
 
-      await expect(adapter.initiate()).rejects.toThrow(/key is too long/i)
+      await adapter.initiate()
+      expect(s3Client.createMultipartUpload).toHaveBeenCalledWith({
+        Bucket: "my-bucket",
+        Key: boundaryKey,
+      })
     },
   )
 })
