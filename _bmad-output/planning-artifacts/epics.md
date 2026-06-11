@@ -2,11 +2,13 @@
 stepsCompleted: [1, 2, 3, 4]
 status: complete
 completedAt: '2026-03-08'
-lastAppended: '2026-05-22'
-lastAppendedEpic: 11
+lastAppended: '2026-06-11'
+lastAppendedEpic: 13
 inputDocuments:
   - '_bmad-output/planning-artifacts/architecture.md'
   - '_bmad-output/test-artifacts/test-design-epic-11.md'
+  - '_bmad-output/implementation-artifacts/epic-11-retro-2026-06-11.md'
+  - '_bmad-output/brainstorming/brainstorming-session-2026-05-17-001.md'
 ---
 
 # Tranquilload - Epic Breakdown
@@ -81,6 +83,7 @@ FR8 — Adapters (file, Node, S3, HTTP): Epic 8
 FR9 — Network multiplier (0.1–1.0): Epic 6
 FR10 — Optimal part size calculation: Epic 6
 NFR1–NFR7 — Transversal: Epic 1 + epics concerned
+FR hardening (P2-surfaced gaps) — Epic 13: matures FR1/FR2/FR5/FR6/FR7/FR8 documented edge behaviour into typed contracts
 
 ## Epic List
 
@@ -128,6 +131,10 @@ The team can run a P1 nightly suite covering the 42 release-critical scenarios s
 ### Epic 11: P2 Nightly Coverage
 The team can run a P2 nightly suite covering ~87 scenarios across compression error paths, layer/logger/cleanup safety, resume edges, persona journeys, chaos, stream/chunking edges, and cross-browser/DIST/DOC gap-closers — extending Epic 10's P1 gate to a full nightly green bar.
 **FRs covered:** Transversal (extends Epic 10; targets FR3/FR4 error paths, FR5 observability, FR6 resilience, FR7 resume edges, FR8 adapter edges, NFR1/NFR3 cross-browser, NFR5 logger safety)
+
+### Epic 13: Library Hardening
+The library maintainer can land the 14 documented behaviour-gaps surfaced by Epic 11's P2 coverage as validated, typed contracts — each story flips an existing locking test from "documents the gap" to "validates the fix": input-boundary guards, resume/reconcile robustness, abort & cleanup recovery, resilience policies, observability/integrity, and the `simpleHttpUpload` HTTP/1.1 streaming-transmission fix (D1). Epic 12 (circuit-breaker wire-up) is tracked separately.
+**FRs covered:** Transversal (hardens FR1/FR2/FR5/FR6/FR7/FR8 + NFR3/NFR4/NFR6; no new FR)
 
 ## Epic 1: Project Foundation
 
@@ -941,3 +948,147 @@ So that the bundle/runtime contract holds across all 3 browsers and the README e
 ---
 
 **Total Epic 11 scope:** 87 net-new tests + 1 deferred to Epic 12. ~75–115h effort. See `_bmad-output/test-artifacts/test-design-epic-11.md` for the full coverage matrix, execution tiers (Smoke / Tier A VT / Tier B PW-Lib / Tier C PW-UI), and gate criteria.
+
+## Epic 13: Library Hardening
+
+The library maintainer can land the 14 documented behaviour-gaps surfaced by Epic 11's P2 coverage as validated, typed contracts. Unlike Epics 10/11 (which *locked* current behaviour), Epic 13 *changes* behaviour — each story flips an existing locking test from "documents the gap" to "validates the fix".
+
+**Source backlog:** `_bmad-output/implementation-artifacts/epic-11-retro-2026-06-11.md` § *Epic 13 Candidate Backlog* (14 items, each with a locking test already in place). Genealogy: `brainstorming-session-2026-05-17-001.md` (F#N scenario matrix).
+
+**Shovel-ready property:** because each candidate already has a passing locking test that documents the desired end-state, most stories are "flip the lock + update the assertion". The 14 candidates group into 6 stories by subsystem.
+
+**API-validation gate (process lesson from 11.4):** brainstorming-sourced ACs must pass an API-validation pass before dev (the 11.4 AC#5 `Schedule.fixed`-as-combinator drift). This pass was run during epic authoring (2026-06-11) and is baked into the ACs below; the 3 spike-gated stories (13.3, 13.5, 13.6) require a further design pass at story-creation time.
+
+**Non-breaking default rule:** every new option (`partTimeout`, fail-fast policy, `reinitOnStale`, ingest checksum, auto-fallback) is opt-in — Epic 13 must not change default behaviour for existing consumers.
+
+**Epic 12 (circuit-breaker wire-up, R-P2-11 / D2) is tracked separately** and is NOT part of Epic 13.
+
+### Story 13.1: API-Boundary Input Guards
+
+As a library maintainer,
+I want pre-flight validation guards at the public API boundary for the four documented input-edge gaps (non-integer `chunkSize`, oversized S3 key, S3 10k-part overflow, empty one-shot),
+So that malformed configuration surfaces as a typed error/throw BEFORE any network request, instead of silently degrading or producing a corrupt/orphaned upload.
+
+**Acceptance Criteria:**
+
+**Given** a non-integer `chunkSize` (e.g. `1024.7`)
+**When** `uploadMultipart` runs
+**Then** it fails fast with a typed validation error and uploads no part — by extending the existing guard in `multipart/upload-stream.ts` (currently `!Number.isFinite(chunkSize) || chunkSize <= 0`) to also require `Number.isInteger(chunkSize)`. Flips locking test 11.6-INT-015 (F#44) from "accepted, byte-fidelity preserved" to "rejected at the boundary".
+
+**Given** an S3 object key longer than 1024 chars
+**When** `s3MultipartUpload`'s `initiate` is invoked
+**Then** it rejects pre-flight with `InitiateUploadError` BEFORE calling `createMultipartUpload`. The guard lives in the **S3 adapter** (S3-specific limit), per the architecture rule "protocol constraints live in the adapter, never in the core". Flips locking test 11.7-INT-002 (G#19) from "adapter does NOT pre-validate" to "pre-flight rejection".
+
+**Given** a `totalBytes / chunkSize` that would exceed S3's 10,000-part maximum
+**When** the caller validates upload configuration
+**Then** the overflow is surfaced as an `InitiateUploadError`/throw via a **caller-side helper** (extend `computeOptimalPartSize` or a new `assertS3PartCount`) — the 10k limit is S3-specific and MUST NOT live in the protocol-agnostic core. *(Design choice: opt-in helper vs S3-adapter-embedded guard — decide at story creation.)* Complements locking test 11.6-INT-013 (F#42).
+
+**Given** an empty source stream passed to `uploadOnce`
+**When** the upload runs
+**Then** per the chosen policy, it either rejects with a typed error OR preserves the current `UploadCompleted totalParts:1` behaviour behind an explicit `allowEmpty` opt-in. *(Design choice: empty-as-error vs opt-in — decide at story creation; default must not break existing callers without a flag.)* Flips/refines locking test 11.6-INT-012 (F#39).
+
+**Coverage:** flips/refines 4 locking tests (11.6-INT-015, 11.7-INT-002, 11.6-INT-013, 11.6-INT-012). Touches core (`upload-stream.ts` chunkSize guard; `oneshot` empty policy) + S3 adapter (key-length guard; part-count helper). **Quick-win tier** — no spike. Risk clusters R-P2-7, R-P2-13, R-P2-14.
+
+### Story 13.2: Resume & Reconcile Robustness
+
+As a library maintainer,
+I want the resume/reconcile path to recover from the three documented stale-state gaps (deleted/GC'd `uploadId`, GC'd reconciled part, and the S3 adapter not threading a resumed `uploadId`),
+So that a cross-session resume against drifted server-side state recovers gracefully instead of dead-ending in `ReconcileError`/`CompleteUploadError` or signing against an empty `uploadId`.
+
+**Acceptance Criteria:**
+
+**Given** a persisted `uploadId` the server reports as `NoSuchUpload` (deleted / GC'd)
+**When** the resume reconcile runs with an opt-in `reinitOnStale` policy
+**Then** the lib auto-reinitiates a fresh multipart from part 1 and completes, instead of failing with `ReconcileError`. Default (no policy) keeps the current fail-fast. Flips locking test 11.3-INT-003 (F#12) from "surfaces ReconcileError, no auto-reinit" to "re-initiates and completes"; corroborated by persona 11.4-E2E-007 (C2).
+
+**Given** a cross-session resume where the consumer never calls `initiate` in the new session
+**When** `s3MultipartUpload` signs presigned URLs for `uploadPart`
+**Then** it threads a caller-supplied `resumeUploadId` (new adapter option/setter) instead of the empty `storedUploadId` closure (`let storedUploadId = ""` at `s3-multipart-upload.ts:42`, set only in `initiate`). Closes the 11.7 S3-resume gap.
+
+**Given** `reconcileCompletedParts` returns a part the server GCs before `/complete`
+**When** the upload reaches the complete phase
+**Then** the lib detects the missing part and re-uploads it instead of dead-ending. Flips locking test 11.3-INT-005 (F#14) from "surfaces as CompleteUploadError at complete phase" to "re-uploads and completes".
+
+**Coverage:** flips 11.3-INT-003 + 11.3-INT-005, closes the 11.7 S3-resume gap; persona 11.4-E2E-007 corroborates. Touches core resume orchestration + S3 adapter. **Quick-win tier.** Risk cluster R-P2-6.
+
+### Story 13.3: Abort & Cleanup Recovery
+
+As a library maintainer,
+I want a teardown/cleanup contract for the two documented abort gaps (orphan multipart on initiate-abort/tab-close, and no clean late-stage `/complete`-abort recovery),
+So that an aborted or abandoned upload does not silently leave an orphan multipart on the server and a late-stage abort has a documented recovery path.
+
+**⚠️ API-validation / design spike required before dev:** there is NO existing hook the lib can call on teardown (F#87 lock: `initiate` fires once, `completeUpload` never reached, no callback). The story must first design the abort/cleanup surface (e.g. an `abortMultipartUpload(uploadId)` callback the orchestrator invokes on interrupt) and validate it against Effect's `Scope`/finalizer semantics and the existing `Effect.raceFirst(partEffect, fromAbortSignal(signal))` interrupt path before implementing.
+
+**Acceptance Criteria:**
+
+**Given** an abort fires after `/initiate` but before `/complete`
+**When** the orchestration tears down
+**Then** the lib invokes a user-supplied abort/cleanup callback so the server-side multipart is cleaned up — instead of the current "orphan multipart on server, no auto-abort hook". Flips BOTH the vitest lock 11.2-INT-015 (F#87) and the PW-Lib chaos lock 11.5-E2E-011 (C#18).
+
+**Given** an abort fires DURING `/complete`
+**When** the upload tears down
+**Then** the lib surfaces a deterministic, documented recovery state (parts are uploaded; `/complete` may or may not have landed) and defines whether `/complete` is idempotent-retryable or requires a reconcile probe — instead of the current "no clean late-stage recovery". Flips locking test 11.5-E2E-013 (C#20).
+
+**Coverage:** flips 11.2-INT-015, 11.5-E2E-011, 11.5-E2E-013. Touches core orchestration teardown + adapter abort surface. **Spike-gated.** Risk clusters R-P2-3 + R-P2-9.
+
+### Story 13.4: Resilience Policies & Timeouts
+
+As a library maintainer,
+I want two opt-in resilience knobs — a `partTimeout` bound on a pathologically slow part, and a fail-fast policy for `PresignedUrlError` —
+So that a slow-loris part cannot hang an upload indefinitely and an unrecoverable presigning failure can short-circuit instead of burning the full retry budget.
+
+**Acceptance Criteria:**
+
+**Given** a `partTimeout: Duration` is supplied and a part's transfer exceeds it
+**When** the upload runs
+**Then** that part attempt fails with a typed timeout error (which feeds the existing `retrySchedule`) — by wrapping the per-part `partEffect` in `Effect.timeoutFail` at the `upload-stream.ts` part-execution site. With no `partTimeout` set, the current "no hardcoded client timeout" behaviour is preserved. Flips locking test 11.5-E2E-010 (C#15) from "slow-loris part still completes" to "slow part times out when bounded".
+
+**Given** a fail-fast policy naming `PresignedUrlError`
+**When** `uploadPart`'s sign step throws `PresignedUrlError`
+**Then** the part fails immediately without consuming the retry budget — instead of the current "wraps as `PartUploadError.cause` and is retried uniformly" (3 attempts in the lock). Default (no policy) preserves uniform retry. Flips locking test 11.3-INT-001 (F#5).
+
+**Coverage:** flips 11.5-E2E-010, 11.3-INT-001. Both additive opt-in options; defaults unchanged (non-breaking). Touches core `upload-stream.ts` part execution + retry. **Quick-win tier.** Risk clusters R-P2-6 + R-P2-9.
+
+### Story 13.5: Observability & Integrity
+
+As a library maintainer,
+I want the event stream to flush buffered `UploadEvent`s before surfacing a failure/abort, and an optional ingest checksum to catch a corrupting `CompressionService`,
+So that abort/failure observability is not lost (events currently read empty on the failure path) and a buggy compressor's corrupt output is surfaced before the upload "succeeds".
+
+**⚠️ API-validation / design spike required before dev:** the event-stream flush is a real Effect/Stream limitation (the `Stream<UploadEvent>` errors WITHOUT flushing buffered events — worked around throughout Epic 11 with callback-side counters). The spike must determine how to flush-then-fail in Effect's Stream model (emit terminal events before failing the stream, or split the events channel from the result channel) WITHOUT masking the typed error. The ingest-checksum placement (a pipeline checksum transform vs a core option) must be validated against the `(stream) => stream` pipeline contract.
+
+**Acceptance Criteria:**
+
+**Given** an upload that fails or is aborted mid-flight
+**When** the consumer reads the `events` stream
+**Then** all `UploadEvent`s emitted before the failure are observable (flushed) before the stream surfaces the typed error — instead of reading empty. Removes the callback-side-counter workaround documented across Story 11.5.
+
+**Given** an optional ingest checksum is enabled and a `CompressionService` emits bytes unrelated to its input
+**When** the upload runs
+**Then** the corruption is surfaced as a typed error before `completeUpload` — instead of the current "upload completes with corrupt bytes (no-checksum trust boundary)". Default (no checksum) preserves the zero-overhead trust boundary. Flips locking test 11.2-INT-005 (F#70).
+
+**Coverage:** flips the Story 11.5 events-empty workaround + 11.2-INT-005. Touches core events/Stream orchestration + pipeline. **Spike-gated.** Risk clusters R-P2-3 + R-P2-5.
+
+### Story 13.6: simpleHttpUpload HTTP/1.1 Streaming Transmission
+
+As a library maintainer,
+I want `simpleHttpUpload` to transmit a streamed body across all three engines — either by negotiating HTTP/2 or by transparently falling back to buffered mode when streaming over HTTP/1.1 fails —
+So that the documented cross-browser transmission gap (streamed PUT works only on Chromium/HTTP-2 today) closes without forcing the user to manually set `bufferMode`.
+
+**⚠️ API-validation / design spike required before dev (Decision D1):** the adapter ALREADY has `duplex: 'half'` streaming + a manual `bufferMode` opt-out; CONSTRUCTION works in all 3 engines, but TRANSMISSION over plain HTTP/1.1 fails outside Chromium (request streams require HTTP/2). Automatic fallback has a memory-safety tension — `bufferMode` buffers the whole source, so the lib MUST NOT blindly auto-buffer a huge file. The spike must choose between (a) HTTP/2 capability detection, (b) catch-stream-failure-then-retry-buffered bounded by a size threshold, or (c) a documented per-engine policy — validated against the cross-engine probe in `11.7-E2E-002`.
+
+**Acceptance Criteria:**
+
+**Given** a streamed PUT to an HTTP/1.1 endpoint in Firefox / WebKit
+**When** `simpleHttpUpload` runs in its default (streaming) mode
+**Then** the upload transmits successfully — over a negotiated HTTP/2 connection or via a transparent buffered fallback — instead of rejecting. Flips locking test 11.7-E2E-002 (F#40 / G#2) from "streamed PUT fails on HTTP/1.1 outside Chromium" to "streamed PUT transmits in all engines".
+
+**Given** auto-fallback to buffered mode is triggered
+**When** the source exceeds a configured size threshold
+**Then** the lib surfaces a typed error (or honours an explicit policy) rather than silently buffering an oversized file into memory.
+
+**Coverage:** flips 11.7-E2E-002 (the D1 WAIVER entry). Touches the `simpleHttpUpload` adapter only. **Spike-gated (D1).** Risk cluster R-P2-4.
+
+---
+
+**Total Epic 13 scope:** 6 stories flipping ~13 discrete locking tests (plus the 11.5 events-empty cross-cutting workaround and the 11.7 S3-resume gap) from "documents the gap" to "validates the fix". 1 candidate (F#42 10k-part) is realized as a caller-side/S3-adapter helper per the protocol-agnostic-core rule. **Quick-win tier:** 13.1, 13.2, 13.4 (flip-the-lock). **Spike-gated:** 13.3, 13.5, 13.6 (API-validation/design pass precedes implementation). Every new option is opt-in — no default behaviour changes. Epic 12 (circuit-breaker, R-P2-11) tracked separately.
