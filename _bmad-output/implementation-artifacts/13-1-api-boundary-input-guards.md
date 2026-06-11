@@ -4,7 +4,7 @@ baseline_commit: 792b037
 
 # Story 13.1: API-Boundary Input Guards
 
-Status: review
+Status: done
 
 ## Story
 
@@ -164,4 +164,23 @@ claude-opus-4-8 (Opus 4.8) — dev per the permanent Epics 6–9 rule (Opus for 
 - **Added:** `.changeset/epic13-core-input-guards.md`
 - **Added:** `.changeset/epic13-adapters-s3-guards.md`
 - **Modified:** `_bmad-output/implementation-artifacts/13-1-api-boundary-input-guards.md` (this file)
-- **Modified:** `_bmad-output/implementation-artifacts/sprint-status.yaml` (13-1 → in-progress → review)
+- **Modified:** `_bmad-output/implementation-artifacts/sprint-status.yaml` (13-1 → in-progress → review → done)
+
+## Senior Developer Review (AI)
+
+**Reviewer:** independent Opus 4.8 `code-reviewer` agent (fresh context — Codex unavailable; another Opus stands in per user direction).
+**Date:** 2026-06-11
+**Outcome:** ✅ **Approve** — 0 HIGH / 0 MEDIUM / 4 LOW (all informational, no change recommended).
+
+### Verdict
+
+Clean, well-scoped behaviour-changing guard story. All four guards correct; the 10k boundary math is pinned on both sides (10_000 passes, 10_001 throws); no default behaviour changed (peek runs only on the `allowEmpty:false` opt-in path); the flipped tests assert the new behaviour with exact error types + messages (not tautologies). The dev's three scrutiny flags all hold: (A) `peekNonEmpty` releases the reader lock on every reachable path (done → `releaseLock`, cancel → `reader.cancel` which releases per spec, error → source already dead), no new hang/leak vs the default path, and the byte-fidelity arm proves the re-prepend is non-corrupting; (B) throwing `InitiateUploadError` at construction is defensible for a pre-flight config fault and consistent with the sibling guard's construction-time throw; (C) the repurposed 11.7-INT-002 test-2 adds real incremental value (pins `>` vs `>=` and proves the key forwards uncorrupted). Tests were edited in place (not duplicated) — no coverage-regression trap.
+
+### Findings (all LOW / informational — no change applied)
+
+- **LOW-1** (`oneshot/upload.ts` peek error path): the `pull` error path doesn't explicitly `releaseLock()` if `reader.read()` rejects after the first chunk — but the source is already dead in that case, so no functional leak/hang; consistent with native stream semantics. No change.
+- **LOW-2** (`oneshot/upload.ts` cancel): `cancel` calls `reader.cancel(reason)` without `releaseLock()` — correct, `cancel()` implicitly releases the lock per the Streams spec. No change.
+- **LOW-3** (`s3-multipart-upload.ts` DD3): new key guard throws typed `InitiateUploadError` while the sibling chunkSize guard throws plain `Error` at the same site — asymmetric but explicitly scoped out (DD3); chunkSize-guard upgrade flagged for a future cleanup. No change.
+- **LOW-4** (`optimal-part-size.ts`): `assertS3PartCount` doesn't reject non-integer chunkSize (unlike the core guard) — different responsibility (part-count vs format); the core integer guard is the authoritative format gate. No change.
+
+**Dev decision: no changes applied** — concur with the reviewer. `receiving-code-review` skepticism applied: all 4 LOWs are informational with no reachable failure mode, and the reviewer self-policed against padding. A clean 0H/0M on a small, well-scoped guard story is the expected outcome. Triptyque re-verified green post-review (core 206/206, adapters 59/59).

@@ -34,7 +34,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-14
-last_updated: 2026-06-11 # Story 13.1 (API-Boundary Input Guards) DEV COMPLETE → review. 4 guards landed (non-integer chunkSize TypeError; >1024-byte S3 key InitiateUploadError; assertS3PartCount 10k helper; allowEmpty opt-in via bounded peek). Flipped 11.6-INT-015/11.7-INT-002/11.6-INT-012; +4 assertS3PartCount tests. Triptyque green (build 2/2, core 206/206, adapters 59/59, typecheck 5/5). 2 patch changesets. NEXT: independent fresh-context Opus code-reviewer. EARLIER: EPIC 13 FORMALIZED (6 stories); EPIC 11 COMPLETE → done + retro done. Story 11.4 (persona journeys) → done: 7 PW-UI specs ×3 engines = 21/21 GREEN no flakes/skips, no lib change, 3 test-app debug toggles. Independent Opus review Approve 0H/0M/3L. Triptyque green + chaos-isolation 150/150. Traceability 82 → 89 (100%); all 5 HIGH clusters covered (R-P2-1 last, via 11.4-C2). Retro: epic-11-retro-2026-06-11.md. Recommended next: pre-1.0 patch release (ships 11.1 compress fix) → formalize Epic 13 (test-backed candidate backlog) → defer Epic 12 (circuit-breaker).
+last_updated: 2026-06-11 # Story 13.1 (API-Boundary Input Guards) DONE. Independent fresh-context Opus code-reviewer → Approve 0H/0M/4L (all informational, no change). Triptyque re-verified green post-review (core 206/206, adapters 59/59, build 2/2, typecheck 5/5). 4 guards + 3 flipped locking tests + 2 patch changesets. NEXT: Story 13.2 (resume/reconcile robustness, quick-win) or cut the patch release. EARLIER: EPIC 13 FORMALIZED (6 stories); EPIC 11 COMPLETE → done + retro done. Story 11.4 (persona journeys) → done: 7 PW-UI specs ×3 engines = 21/21 GREEN no flakes/skips, no lib change, 3 test-app debug toggles. Independent Opus review Approve 0H/0M/3L. Triptyque green + chaos-isolation 150/150. Traceability 82 → 89 (100%); all 5 HIGH clusters covered (R-P2-1 last, via 11.4-C2). Retro: epic-11-retro-2026-06-11.md. Recommended next: pre-1.0 patch release (ships 11.1 compress fix) → formalize Epic 13 (test-backed candidate backlog) → defer Epic 12 (circuit-breaker).
 project: Tranquilload
 project_key: NOKEY
 tracking_system: file-system
@@ -140,7 +140,7 @@ development_status:
   # Spike-gated (API-validation/design pass first): 13.3/13.5/13.6. All new options opt-in (non-breaking).
   # Epic 12 (circuit-breaker, R-P2-11) tracked separately. See epics.md L952-1090.
   epic-13: in-progress
-  13-1-api-boundary-input-guards: review
+  13-1-api-boundary-input-guards: done
   13-2-resume-and-reconcile-robustness: backlog
   13-3-abort-and-cleanup-recovery: backlog
   13-4-resilience-policies-and-timeouts: backlog
