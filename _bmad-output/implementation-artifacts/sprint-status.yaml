@@ -128,7 +128,7 @@ development_status:
   11-1-compression-and-pipeline-error-paths: done
   11-2-layers-logger-cleanup-and-resource-safety: done
   11-3-resume-reconcile-and-error-mapping-edges: done
-  11-4-persona-journeys-ui-flows: ready-for-dev
+  11-4-persona-journeys-ui-flows: review
   11-5-chaos-cluster-intermittent-simultaneous-degraded: done
   11-6-stream-chunking-one-shot-and-dual-mode-edges: done
   11-7-cross-browser-dist-doc-and-filename-gap-closers: done

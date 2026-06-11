@@ -3,6 +3,7 @@ import { uploadOnce } from "@tranquilload/core/oneshot"
 import { compress } from "@tranquilload/core/pipeline"
 import { fromFile } from "@tranquilload/adapters/fromFile"
 import type { UploadEvent } from "@tranquilload/core/progress"
+import { Duration, Schedule } from "effect"
 
 // ---------- DOM ----------
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
@@ -39,6 +40,38 @@ interface ResumeState {
 }
 
 let currentAbort: AbortController | null = null
+
+// ---------- Debug toggles (Story 11.4 persona harness) ----------
+// Activated via query params so the PW-UI persona specs can drive documented
+// foot-gun paths without a separate build. Every toggle is a no-op unless
+// explicitly enabled, so normal manual use is unaffected.
+const DEBUG_PARAMS = new URLSearchParams(window.location.search)
+const DEBUG = {
+  // P#B1 (11.4-E2E-004): fire-and-forget uploadMultipart() with NO `await result`.
+  forgotAwait: DEBUG_PARAMS.get("forgotAwait") === "1",
+  // P#B5 (11.4-E2E-005): call getProgress() INSIDE part-1 uploadPart (expects 0 bytes).
+  probeGetProgressFromPartOne: DEBUG_PARAMS.get("probeGetProgressFromPartOne") === "1",
+  // P#B6 (11.4-E2E-006) / P#A4 (11.4-E2E-003): inject a custom retrySchedule of
+  // `Schedule.recurs(retryRecurs)` with a fixed `retryFixedMs` delay per retry.
+  retryFixedMs: DEBUG_PARAMS.has("retryFixedMs") ? Number(DEBUG_PARAMS.get("retryFixedMs")) : null,
+  retryRecurs: DEBUG_PARAMS.has("retryRecurs") ? Number(DEBUG_PARAMS.get("retryRecurs")) : null,
+}
+
+/**
+ * Build the custom retry schedule from the debug query params, or `undefined`
+ * to fall back to the library default. `recurs(n)` caps the retry count and
+ * `addDelay` makes every retry wait a fixed `retryFixedMs` (vs the default
+ * exponential backoff) — exactly what P#B6 asserts end-to-end.
+ */
+function debugRetrySchedule() {
+  if (DEBUG.retryFixedMs == null || DEBUG.retryRecurs == null) return undefined
+  // `Schedule<number, unknown>` — assignable to the lib's
+  // `Schedule<unknown, PartUploadError>` retrySchedule slot (Out widens to
+  // unknown; In stays contravariantly compatible).
+  return Schedule.recurs(DEBUG.retryRecurs).pipe(
+    Schedule.addDelay(() => Duration.millis(DEBUG.retryFixedMs!)),
+  )
+}
 
 // ---------- Helpers ----------
 function log(line: string): void {
@@ -169,18 +202,36 @@ async function runMultipart(file: File, resumeFrom: ResumeState | null): Promise
   currentAbort = new AbortController()
   const callbacks = makeMultipartCallbacks(file, ctx, currentAbort.signal)
 
-  const { uploadId, result, events } = uploadMultipart({
+  // P#B5 foot-gun probe: call getProgress() from INSIDE part-1's uploadPart,
+  // i.e. BEFORE the post-uploadPart `Ref.update` for part 1 has run. The
+  // snapshot must read 0 bytes (the documented MEMORY foot-gun). `handle` is
+  // assigned synchronously below, well before any uploadPart callback fires.
+  let handle: ReturnType<typeof uploadMultipart> | null = null
+  const uploadPart = DEBUG.probeGetProgressFromPartOne
+    ? async (partNumber: number, chunk: Uint8Array): Promise<string> => {
+        if (partNumber === 1 && handle) {
+          const snap = await handle.getProgress()
+          log(`getProgress() inside uploadPart part=1 → bytesUploaded=${snap.bytesUploaded}`)
+        }
+        return callbacks.uploadPart(partNumber, chunk)
+      }
+    : callbacks.uploadPart
+
+  handle = uploadMultipart({
     stream,
     totalBytes,
     chunkSize,
     maxConcurrency,
     signal: currentAbort.signal,
     initiate: callbacks.initiate,
-    uploadPart: callbacks.uploadPart,
+    uploadPart,
     completeUpload: callbacks.completeUpload,
     reconcileCompletedParts: resumeFrom ? callbacks.reconcileCompletedParts : undefined,
     pipeline: compressInput.checked ? compress("deflate-raw") : undefined,
+    retrySchedule: debugRetrySchedule(),
   })
+
+  const { uploadId, result, events } = handle
 
   uploadId.then((id) => {
     uploadIdDisplay.textContent = `uploadId: ${id}`
@@ -214,6 +265,45 @@ async function runMultipart(file: File, resumeFrom: ResumeState | null): Promise
     setUiBusy(false)
     currentAbort = null
   }
+}
+
+// P#B1 foot-gun (11.4-E2E-004): fire uploadMultipart() and DELIBERATELY never
+// `await result` (nor drain `events`, nor try/catch). The rejected `result`
+// promise has no consumer, so on failure it escapes to the global
+// `unhandledrejection` handler — proving the dangling failure is OBSERVABLE
+// (a regression that silently swallowed it would be a data-loss foot-gun). We
+// install a one-time global listener so the escape surfaces in the UI log
+// deterministically across all three browsers.
+function runMultipartForgotAwait(file: File): void {
+  setUiBusy(true)
+  logEl.textContent = ""
+  log(`Starting multipart upload (forgot-await foot-gun): ${file.name} (${fmtBytes(file.size)})`)
+
+  const onUnhandled = (ev: PromiseRejectionEvent): void => {
+    const e = ev.reason as { _tag?: string; message?: string }
+    log(`UNHANDLED REJECTION: ${e?._tag ?? "Error"}: ${e?.message ?? String(ev.reason)}`)
+    setUiBusy(false)
+    currentAbort = null
+  }
+  window.addEventListener("unhandledrejection", onUnhandled, { once: true })
+
+  const { stream, totalBytes } = fromFile(file)
+  const chunkSize = Math.max(5, Number(chunkSizeInput.value)) * 1024 * 1024
+  const ctx: MultipartContext = { key: "", uploadId: "" }
+  currentAbort = new AbortController()
+  const callbacks = makeMultipartCallbacks(file, ctx, currentAbort.signal)
+
+  // No `await`, no events drain, no try/catch — that omission IS the foot-gun.
+  uploadMultipart({
+    stream,
+    totalBytes,
+    chunkSize,
+    maxConcurrency: 1,
+    signal: currentAbort.signal,
+    initiate: callbacks.initiate,
+    uploadPart: callbacks.uploadPart,
+    completeUpload: callbacks.completeUpload,
+  })
 }
 
 function handleEvent(event: UploadEvent, total: number): void {
@@ -292,6 +382,7 @@ startBtn.addEventListener("click", () => {
   if (!file) { log("Pick a file first"); return }
   const mode = (document.querySelector<HTMLInputElement>("input[name=mode]:checked"))?.value
   if (mode === "oneshot") void runOneshot(file)
+  else if (DEBUG.forgotAwait) runMultipartForgotAwait(file)
   else void runMultipart(file, null)
 })
 

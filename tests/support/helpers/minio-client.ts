@@ -85,6 +85,32 @@ export async function headObjectSize(
 }
 
 /**
+ * Find the object under `uploads/` whose key ends with `filename`.
+ * Both upload paths place the object at `uploads/<uuid>-<filename>`, so the
+ * suffix match is unique per timestamped filename. Throws (with the current
+ * listing) when nothing matches — turning a missing object into a readable
+ * failure rather than a silent `undefined`.
+ */
+export async function findUploadedKey(
+  client: S3Client,
+  bucket: string,
+  filename: string,
+): Promise<string> {
+  const list = await client.send(
+    new ListObjectsV2Command({ Bucket: bucket, Prefix: "uploads/" }),
+  )
+  const match = (list.Contents ?? []).find((o) => o.Key?.endsWith(filename))
+  if (!match?.Key) {
+    throw new Error(
+      `MinIO has no object ending with "${filename}" under uploads/ — got: ${(list.Contents ?? [])
+        .map((o) => o.Key)
+        .join(", ")}`,
+    )
+  }
+  return match.Key
+}
+
+/**
  * Best-effort cleanup of `uploads/` prefix between tests.
  * Tests that need a guaranteed-empty bucket should call this in a `beforeEach`.
  */

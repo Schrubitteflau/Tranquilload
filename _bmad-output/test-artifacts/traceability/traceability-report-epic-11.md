@@ -10,11 +10,11 @@ sources:
   - '_bmad-output/planning-artifacts/epics.md'
 artifacts:
   vitest_test_files_added_this_epic: 16   # +1 11.1; +4 11.6; +5 11.2; +1 11.3 (resume-error-edges); +5 11.7 (filename-edges VT + 2 DIST + 3 DOC incl. extracted doctest-harness)
-  playwright_spec_files_added_this_epic: 8 # +1 11.2 (cleanup-heap-stability); +3 11.7 (circuit-open fixme, simple-http-upload-cross-browser, deflate-raw-support-matrix); +4 11.5 (chaos-intermittent / -simultaneous / -degraded / -abort-timing)
+  playwright_spec_files_added_this_epic: 15 # +1 11.2 (cleanup-heap-stability); +3 11.7 (circuit-open fixme, simple-http-upload-cross-browser, deflate-raw-support-matrix); +4 11.5 (chaos-intermittent / -simultaneous / -degraded / -abort-timing); +7 11.4 (persona-A1/A2/A4/B1/B5/B6/C2)
   brainstorming_p2_scenarios: 87
-stories_landed: ['11.1', '11.2', '11.3', '11.5', '11.6', '11.7']
-stories_pending: ['11.4']
-gate_decision: 'IN-PROGRESS (6/7 stories landed)'
+stories_landed: ['11.1', '11.2', '11.3', '11.4', '11.5', '11.6', '11.7']
+stories_pending: []
+gate_decision: 'IN-PROGRESS (7/7 implemented; 11.4 in review — epic gate pending retrospective)'
 ---
 
 # Requirements Traceability — Epic 11 (P2 Nightly Coverage)
@@ -34,11 +34,11 @@ Epic 11 traces ~87 P2 scenarios from `brainstorming-session-2026-05-17-001` (P2 
 | **11.1** Compression & pipeline error paths | 6 tests | **6 ✅** | **6 ✅** (post-review) | Yes — `compress.ts` wraps sync throws into stream-error path. Code review: 0H/0M/4L; L1+L2 fixed inline. → **done** |
 | **11.2** Layers/logger/cleanup | 18 tests | **18 ✅** (17 VT + 1 PW-Lib) | **18 ✅** | None — all 5 R-P2-2 HIGH-cluster tests passed against current lib on first run (ATDD red phase). 13 LOCK tests added on top. → **done** |
 | **11.3** Resume + reconcile edges | 6 tests | **6 ✅** | **6 ✅** | None — pure surface-area locks; all 6 phase-accurate mapping IDs passed on first run, no lib change. 3 Epic 13 candidates surfaced inline. → **done** |
-| **11.4** Persona journeys | 7 tests | 0 | 0 | — |
+| **11.4** Persona journeys | 7 tests | **7 ✅** (×3 engines = 21 runs) | **7 ✅** | None — pure test-app harness + PW-UI locks, no lib change. All 7 persona IDs green on chromium/firefox/webkit (21/21, no flakes, no skips). 3 test-app debug toggles added. R-P2-1 (last HIGH cluster) covered by C2. → **review** |
 | **11.5** Chaos cluster | 13 tests | **13 ✅** (×3 engines = 39 runs) | **13 ✅** | None — surface-area/contract locks only; phase-accurate error mapping (PartUploadError / MaxRetriesExceededError / CompleteUploadError / AbortError) + `Effect.raceFirst` abort-during-backoff all green on Chromium+Firefox+WebKit. Independent Opus review Approve 0H/0M/3L (2 nits applied). 1 observation + 3 Epic 13 candidates surfaced. → **done** |
 | **11.6** Stream/chunking/dual-mode | 28 tests | **29 ✅** (28 IDs; 11.6-INT-018 split into clean + remainder lock) | **29 ✅** (post-review) | None — pure surface-area locks; all 28 IDs covered with no lib change. Codex review: 0H/4M/1L, all 5 fixed inline (test-design rigor only). → **done** |
 | **11.7** Cross-browser + DIST + DOC | 11 tests (1 DEFERRED) | **10 ✅** (+1 DEFERRED to Epic 12) | **10 ✅** (D-001 MinIO round-trip green; E2E-001 deferred) | None — surface-area/contract locks only. Independent Opus review Changes-Requested → all fixed (M1 D-001 tautology → real two-session resume; L1 E2E-002 was passing on CORS → now same-origin genuine lock) → Approve. 3 Epic 13 candidates surfaced. → **done** |
-| **TOTAL** | 89 (87 + 2 dup) | 82 (92%) | 82 | 1 lib finding so far |
+| **TOTAL** | 89 (87 + 2 dup) | **89 (100%)** | **89** | 1 lib finding total |
 
 ---
 
@@ -177,6 +177,22 @@ All specs run in the `lib` Playwright project; cross-browser is achieved by laun
 
 **Story 11.5 coverage: 13/13 = 100% ✅** (39 runs across Chromium + Firefox + WebKit, no flakes). No lib fix. **Observation:** the events `ReadableStream` errors WITHOUT flushing buffered `UploadEvent`s on the failure/abort path (events read empty) — possible Epic 13 candidate (flush emitted events before surfacing the error). Abort assertions therefore use callback-side counters, not the event stream.
 
+### 2.9 — Story 11.4 (R-P2-1 DATA HIGH + R-P2-10 BUS MEDIUM, 7 PW-UI persona specs × 3 engines)
+
+All 7 specs live in `tests/e2e/ui/` (one file per persona) and run under the `chromium-ui` / `firefox-ui` / `webkit-ui` projects = **21 runs**. Network outages are simulated with `page.route(/\/api\/|:9000/, r => r.abort())` (portable; upload-traffic-scoped) rather than `context.setOffline` (uneven WebKit support). Chaos is set via the session-tagged `request` fixture. Resume-sensitive C2 bypasses the `appPage` fixture. Three test-app debug toggles back the foot-gun personas: `?forgotAwait=1`, `?probeGetProgressFromPartOne=1`, `?retryRecurs=N&retryFixedMs=M`.
+
+| Test ID | Persona / origin | Spec path | Status | Notes |
+|---|---|---|---|---|
+| **11.4-E2E-001** | P#A1 tunnel disconnect | `tests/e2e/ui/persona-A1-tunnel-disconnect.spec.ts` | ✅ GREEN ×3 | DEFAULT schedule (3 attempts, <1s) cannot bridge a long outage → typed `MaxRetriesExceededError`/`PartUploadError`, no fiber crash. Locks the tuning need A4 then satisfies. |
+| **11.4-E2E-002** | P#A2 screen lock | `tests/e2e/ui/persona-A2-screen-lock.spec.ts` | ✅ GREEN ×3 | Chromium: CDP `Emulation.setCPUThrottlingRate {rate:20}` (gated by `browserName`); Firefox/WebKit: `slowSignMs` stand-in. Both: no fiber crash (`pageerror`-empty) + byte-equal completion. |
+| **11.4-E2E-003** | P#A4 Wi-Fi → 5G handoff | `tests/e2e/ui/persona-A4-wifi-handoff.spec.ts` | ✅ GREEN ×3 | TUNED schedule (`recurs(10)` @ fixed 1s via `?retryRecurs`/`?retryFixedMs`) bridges a ~4s `route.abort()` outage → completes byte-equal. The schedule A1 motivates. |
+| **11.4-E2E-004** | P#B1 forgot-await | `tests/e2e/ui/persona-B1-forgot-await.spec.ts` | ✅ GREEN ×3 | `?forgotAwait=1` fires `uploadMultipart()` with no `await result`; the rejected promise escapes to `window.onunhandledrejection` (logged) → OBSERVABLE. Deterministic cross-engine (window listener, not browser-dependent `pageerror`). |
+| **11.4-E2E-005** | P#B5 getProgress foot-gun | `tests/e2e/ui/persona-B5-progress-foot-gun.spec.ts` | ✅ GREEN ×3 | `?probeGetProgressFromPartOne=1` calls `getProgress()` inside part-1 `uploadPart`; reads exactly 0 bytes (Ref.update fires post-uploadPart). concurrency=1 guarantees no sibling completes first. |
+| **11.4-E2E-006** | P#B6 custom retrySchedule | `tests/e2e/ui/persona-B6-custom-retry-schedule.spec.ts` | ✅ GREEN ×3 | `recurs(10)` @ fixed 1s honoured: exactly 6 sign calls (5 retries — unreachable under the default 3-attempt budget) + ≥4.5s of fixed backoff + byte-equal. Two independent proofs. |
+| **11.4-E2E-007** | P#C2 MinIO multipart TTL | `tests/e2e/ui/persona-C2-multipart-ttl.spec.ts` | ✅ GREEN ×3 | **R-P2-1 (last HIGH cluster).** Out-of-band `AbortMultipartUpload` (TTL-GC sim) → reload → resume fails at reconcile with `ReconcileError` (MinIO `ListParts`→`NoSuchUpload`, verified by probe) + `HEAD`→null. **Epic 13 candidate:** auto-detect stale uploadId + auto-re-init. |
+
+**Story 11.4 coverage: 7/7 = 100% ✅** (21 runs across Chromium + Firefox + WebKit, no flakes, no skips — D3 stabilization satisfied first try). No lib change — pure test-app harness + PW-UI locks. Triptyque (build + core 204 + adapters 55 + integration 23 + typecheck 5/5) green; chaos-isolation re-audited 150/150 (personas bypass the Fastify chaos endpoint via `page.route`, so they don't poison the per-session audit). 1 Epic 13 candidate surfaced (C2 stale-uploadId auto-re-init). Status → **review**.
+
 ---
 
 ## 3. Reverse Matrix — P2 Brainstorming Scenarios → Test ID(s)
@@ -303,9 +319,19 @@ All specs run in the `lib` Playwright project; cross-browser is achieved by laun
 
 **Out of scope (per test-design "Not in Scope"):** C#2 (correlation), C#9–C#11 (Web Locks, TTL, InvalidPart-on-retry) — deferred to Epic 12.
 
-### 3.4 — R-P2-1 — NOT YET COVERED
+### 3.8 — R-P2-1 / R-P2-10 — STORY 11.4 COVERAGE
 
-Remaining DATA/BUS P2 risks pending Story 11.4 (persona journeys, PW-UI). See `test-design-epic-11.md` § Coverage Matrix for the full scope.
+| Scenario | Persona | Risk | Test ID(s) | Status |
+|---|---|---|---|---|
+| Resume after MinIO GC'd the multipart (TTL) | P#C2 | R-P2-1 (DATA, HIGH) | 11.4-E2E-007 (×3) | ✅ GREEN — reconcile→`ReconcileError`, object absent (current-behaviour lock; Epic 13: auto-re-init) |
+| `getProgress()` inside part-1 `uploadPart` reads 0 | P#B5 | R-P2-10 (BUS, MEDIUM) | 11.4-E2E-005 (×3) | ✅ GREEN — documented Ref.update post-uploadPart foot-gun |
+| Tunnel disconnect (long outage) → default schedule insufficient | P#A1 | R-P2-1 cluster | 11.4-E2E-001 (×3) | ✅ GREEN — typed failure, no fiber crash |
+| Wi-Fi → 5G handoff → tuned schedule recovers | P#A4 | R-P2-1 cluster | 11.4-E2E-003 (×3) | ✅ GREEN — completes byte-equal |
+| Screen lock (CPU throttle) → no fiber crash | P#A2 | resilience | 11.4-E2E-002 (×3) | ✅ GREEN — CDP (Chromium) / slowSign (FF+WebKit) |
+| Forgot `await result` → observable rejection | P#B1 | BUS foot-gun | 11.4-E2E-004 (×3) | ✅ GREEN — escapes to `window.onunhandledrejection` |
+| Custom retrySchedule honoured | P#B6 | resilience tuning | 11.4-E2E-006 (×3) | ✅ GREEN — 5 retries × fixed 1s, two proofs |
+
+**Story 11.4 coverage: 7/7 = 100% ✅** (21 runs, 3 engines, no flakes). R-P2-1 (DATA HIGH — resume after MinIO TTL) and R-P2-10 (BUS MEDIUM — getProgress foot-gun) both covered. No lib fix. 1 Epic 13 candidate (C2 stale-uploadId auto-re-init).
 
 ---
 
@@ -331,12 +357,13 @@ This section is updated each time a story surfaces a library bug fixed inline (p
 **Sub-gate for Story 11.6:** ✅ PASS — 29/28 tests green, triptyque green pre- AND post-Codex-review (build + 224 tests + typecheck), no lib fix needed, code-review 0H/4M/1L with all 5 addressed inline, status `done`.
 **Sub-gate for Story 11.3:** ✅ PASS — 6/6 tests green, triptyque green (build + 204 core + 44 adapters + typecheck), R-P2-6 MEDIUM phase-accurate mapping locks all passed first run, no lib fix needed, 3 Epic 13 candidates surfaced inline, independent Opus code-review Approve 0H/0M/2L (informational, no change), status `done`.
 **Sub-gate for Story 11.7:** ✅ PASS — 10/10 implemented GREEN (+1 DEFERRED to Epic 12), triptyque green (build + core 204 + adapters 55 + integration 23 + PW-Lib 10 green/1 skip + typecheck 5/5), no lib fix needed. R-P2-4 cross-browser gap codified (E2E-002 — transmission, not construction); R-P2-11 CircuitOpen deferred (E2E-001 `test.fixme`); R-P2-12 deflate-raw matrix locked + README addition; R-P2-14 DIST tree-shake/no-node + filename edges + doctest extensions all green. **Independent Opus code-review: Changes-Requested → M1 (D-001 tautology → real two-session MinIO crash-resume) + L1 (E2E-002 passing on CORS → same-origin genuine transmission lock) both fixed, L2 informational → Approve.** D-001 MinIO round-trip now verified GREEN with `MINIO_REQUIRED=1`; 3 Epic 13 candidates surfaced. Status → `done`.
-**Sub-gate for Story 11.5:** ✅ PASS — 13/13 implemented GREEN × 3 engines = 39 runs, no flakes. **Independent Opus code-review: Approve 0H/0M/3L** (L1 C#13 latency ceiling tightened 2s→1s; L2 abortT0 first-write-wins comment; L3 left as-is per reviewer). Full triptyque green (build + core 204 + adapters 55 + integration 23 + typecheck 5/5) + chaos matrix 39/39 + chaos-isolation 150/150 (new specs do not poison the per-session audit — they bypass the Fastify chaos endpoint via `context.route`). R-P2-3 (HIGH) retry/abort/backpressure semantics + R-P2-9 (MEDIUM) degraded-network all locked with phase-accurate error mapping. No lib fix. Epic 13 candidates: `partTimeout`, orphan cleanup on initiate-abort, late-stage complete-abort recovery, event-stream flush-before-error. Status → `review`.
+**Sub-gate for Story 11.5:** ✅ PASS — 13/13 implemented GREEN × 3 engines = 39 runs, no flakes. **Independent Opus code-review: Approve 0H/0M/3L** (L1 C#13 latency ceiling tightened 2s→1s; L2 abortT0 first-write-wins comment; L3 left as-is per reviewer). Full triptyque green (build + core 204 + adapters 55 + integration 23 + typecheck 5/5) + chaos matrix 39/39 + chaos-isolation 150/150 (new specs do not poison the per-session audit — they bypass the Fastify chaos endpoint via `context.route`). R-P2-3 (HIGH) retry/abort/backpressure semantics + R-P2-9 (MEDIUM) degraded-network all locked with phase-accurate error mapping. No lib fix. Epic 13 candidates: `partTimeout`, orphan cleanup on initiate-abort, late-stage complete-abort recovery, event-stream flush-before-error. Status → `done`.
+**Sub-gate for Story 11.4:** ✅ PASS — 7/7 PW-UI persona specs GREEN × 3 engines = **21 runs, no flakes, no skips** (D3 stabilization satisfied first try — no `@flaky` demotion). Full triptyque green (build + core 204 + adapters 55 + integration 23 + typecheck 5/5) + chaos-isolation re-audited 150/150. **R-P2-1 (DATA HIGH — resume after MinIO TTL)** locked by C2 (reconcile→`ReconcileError`, object absent; current-behaviour lock + Epic 13 auto-re-init candidate); **R-P2-10 (BUS MEDIUM — getProgress foot-gun)** locked by B5. A1/A4 form the tuning-need → tuned-recovery arc; B1 locks the observable forgot-await rejection; B6 locks custom retrySchedule end-to-end; A2 locks throttle-survival cross-engine (CDP gated to Chromium). No lib fix — 3 query-param test-app debug toggles added. Status → `review` (pending independent Opus review).
 
-Epic-level gate decision deferred until all 7 stories land. Per `test-design-epic-11.md` § Quality Gate Criteria:
-- All 5 HIGH (Score=6) clusters covered? Story 11.1 covers R-P2-5; Story 11.2 covers R-P2-2; Story 11.5 covers R-P2-3; R-P2-4 codified by 11.7; R-P2-1 still pending (Story 11.4).
-- ≥95% pass rate per story? 11.1 = 100% ✅; 11.2 = 100% ✅; 11.3 = 100% ✅; 11.5 = 100% ✅; 11.6 = 100% ✅; 11.7 = 100% ✅.
-- No P1 regression? Full repo sweep green (282 tests = 204 core + 55 adapters + 23 integration; + PW-Lib chaos 39/39 ×3 engines + chaos-isolation 150/150). ✅
+Epic-level gate decision pending the Epic 11 retrospective (all 7 stories now implemented). Per `test-design-epic-11.md` § Quality Gate Criteria:
+- All 5 HIGH (Score=6) clusters covered? Story 11.1 covers R-P2-5; Story 11.2 covers R-P2-2; Story 11.5 covers R-P2-3; R-P2-4 codified by 11.7; **R-P2-1 covered by Story 11.4 (C2)**. ✅ All 5 HIGH clusters covered.
+- ≥95% pass rate per story? 11.1 = 100% ✅; 11.2 = 100% ✅; 11.3 = 100% ✅; 11.4 = 100% ✅; 11.5 = 100% ✅; 11.6 = 100% ✅; 11.7 = 100% ✅.
+- No P1 regression? Full repo sweep green (282 tests = 204 core + 55 adapters + 23 integration; + PW-Lib chaos 39/39 ×3 engines + PW-UI personas 21/21 ×3 engines + chaos-isolation 150/150). ✅
 - R-P2-4 (`simpleHttpUpload` duplex) status? ✅ Codified by Story 11.7-E2E-002 — empirically, the construction-level gap has closed in all 3 engines; the remaining gap is HTTP/1.1 TRANSMISSION (Epic 13 candidate, D1 in `epics.md`).
 - R-P2-11 (`CircuitOpenError`) status? Deferred to Epic 12 via Story 11.7-E2E-001 `test.fixme` placeholder (D2 in `epics.md`).
 
@@ -344,4 +371,4 @@ Epic-level gate decision deferred until all 7 stories land. Per `test-design-epi
 
 ## 6. Next Update
 
-Story 11.5 landed (`review`). **Remaining: 11.4 (PW-UI personas, highest per-test cost) — the last Epic 11 story.** After it lands, append §2.x + §3.x, bump §1 totals, and run the Epic 11 retrospective.
+**All 7 Epic 11 stories implemented (89/89 = 100%).** Story 11.4 (PW-UI personas) landed `review` — §2.9 + §3.8 appended, §1 totals bumped to 89/89. **Remaining: independent Opus review of 11.4 → `done`, then the Epic 11 retrospective** (sets the epic-level gate decision and rolls `gate_decision` to PASS).
