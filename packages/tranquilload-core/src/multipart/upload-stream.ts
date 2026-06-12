@@ -131,6 +131,10 @@ export interface UploadMultipartOptions {
    * stale failure surfaces as `ReconcileError` (current behaviour) — so this
    * option is purely additive.
    *
+   * **Re-initiating discards the stale upload entirely:** any `resumeFrom`
+   * content-digest validation is bypassed (a fresh digest is captured via
+   * `getContentDigest`), since the old upload — and its digest — no longer apply.
+   *
    * **Protocol-agnostic by design:** the core never inspects the cause shape
    * (e.g. an S3 `NoSuchUpload` code) — only the caller knows what "stale" means
    * for their backend. Default (`undefined`) preserves the fail-fast

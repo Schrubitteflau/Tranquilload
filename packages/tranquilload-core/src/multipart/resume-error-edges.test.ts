@@ -153,6 +153,33 @@ describe("Story 11.3 — resume + reconcile + error-mapping edges", () => {
       // Terminal completion against the fresh uploadId.
       const completed = events.find(e => e._tag === "UploadCompleted")
       expect(completed).toMatchObject({ _tag: "UploadCompleted", uploadId: "reinit-fresh-id", totalParts: 2 })
+
+      // (c) Reinit during a REAL cross-session resume: a STALE `resumeFrom.uploadId`
+      // must be overridden by the freshly re-initiated id — both in the terminal
+      // event AND in the uploadId handed to completeUpload. Locks the invariant
+      // that the reinit branch wins over the resume branch (refUploadId is the
+      // fresh id, never the stale resume id).
+      let completedWith = ""
+      const resumeEvents = yield* run({
+        stream: fromBytes(new Uint8Array(20).fill(1)),
+        chunkSize: 10,
+        resumeFrom: {
+          version: 1,
+          uploadId: "stale-resume-id",
+          chunkSize: 10,
+          contentDigestCaptured: false,
+        },
+        reconcileCompletedParts: () => Promise.reject(noSuchUpload),
+        reinitOnStale: (cause) => (cause as { Code?: string })?.Code === "NoSuchUpload",
+        initiate: () => ({ uploadId: "reinit-fresh-id" }),
+        uploadPart: (n) => `etag-${n}`,
+        completeUpload: (uploadId) => { completedWith = uploadId },
+      })
+
+      // The stale resume id never reaches completeUpload — the reinit id wins.
+      expect(completedWith).toBe("reinit-fresh-id")
+      const resumeCompleted = resumeEvents.find(e => e._tag === "UploadCompleted")
+      expect(resumeCompleted).toMatchObject({ _tag: "UploadCompleted", uploadId: "reinit-fresh-id" })
     })
   )
 

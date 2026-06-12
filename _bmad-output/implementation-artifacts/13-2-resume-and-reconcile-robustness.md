@@ -4,7 +4,7 @@ baseline_commit: 88f7253
 
 # Story 13.2: Resume & Reconcile Robustness
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -180,6 +180,7 @@ claude-opus-4-8 (Opus 4.8) — dev per the permanent Epics 6–9 rule (Opus for 
 ### Change Log
 
 - 2026-06-12 — Story 13.2 dev (Opus 4.8): resume/reconcile robustness, 2 of 3 sub-changes. **Lib:** `upload-stream.ts` (opt-in `reinitOnStale` predicate + reconcile→reinit orchestration restructure: `runFreshInit` reordered, `reconcileSetup` Effect, reinit-aware `setupStream`); `s3-multipart-upload.ts` (opt-in `resumeUploadId` seeds `storedUploadId`). **Tests:** flipped 11.3-INT-003 (F#12) in place (default arm + reinit arm); re-tagged (not flipped) 11.3-INT-005 (F#14); +2 net-new adapter resume tests. **2 patch changesets.** Triptyque green (build 2/2, core 206/206, adapters 61/61, typecheck 5/5). DEFERRED sub-change 3 (DD3). No e2e (out of scope).
+- 2026-06-12 — Story 13.2 review follow-ups (Opus 4.8, post independent review): applied 2 of 3 LOW findings. LOW-2 → added a TSDoc sentence to `reinitOnStale` documenting that reinit bypasses `resumeFrom` content-digest validation (correct-but-undocumented subtlety). LOW-3 → added arm (c) to 11.3-INT-003: a stale-`resumeFrom` reinit that captures `completeUpload`'s `uploadId` arg, directly locking invariant B (the fresh id wins over the stale resume id — a path the original reinit arm didn't exercise since it had no `resumeFrom`). LOW-1 (stylistic redundant guard) declined. Triptyque re-verified green (core 206/206, adapters 61/61, typecheck 5/5, build 2/2).
 
 ### File List
 
@@ -190,5 +191,23 @@ claude-opus-4-8 (Opus 4.8) — dev per the permanent Epics 6–9 rule (Opus for 
 - **Added:** `.changeset/epic13-core-reinit-on-stale.md`
 - **Added:** `.changeset/epic13-adapters-resume-upload-id.md`
 - **Modified:** `_bmad-output/implementation-artifacts/13-2-resume-and-reconcile-robustness.md` (this file)
-- **Modified:** `_bmad-output/implementation-artifacts/sprint-status.yaml` (13-2 → in-progress → review)
+- **Modified:** `_bmad-output/implementation-artifacts/sprint-status.yaml` (13-2 → in-progress → review → done)
 - **Modified:** `_bmad-output/planning-artifacts/epics.md` (§ Story 13.2 rescope note — done at story creation)
+
+## Senior Developer Review (AI)
+
+**Reviewer:** independent Opus 4.8 `code-reviewer` agent (fresh context — Codex unavailable; another Opus stands in per user direction).
+**Date:** 2026-06-12
+**Outcome:** ✅ **Approve** — 0 HIGH / 0 MEDIUM / 3 LOW (2 applied, 1 declined).
+
+### Verdict
+
+Clean, well-scoped behaviour-changing resume/reconcile story. The reviewer traced every correctness-critical invariant and all held: (A) **exactly-one-initiate** across all three paths (fresh / resume / reinit) — the reinit branch consumes `runFreshInit` inside `reconcileSetup`'s `catchAll`, and `setupStream`'s leading `Option.isSome(reinitEvent)` branch fires before both the `resumeFrom` and `initiate` branches, so neither runs a second time; (B) **refUploadId is the fresh id on reinit-during-resume** (`runResumeSetup` skipped, so it's never overwritten with the stale `resumeFrom.uploadId`); (C) **raw-cause exposure** — the predicate sees the raw rejection via `normalizeCallback`'s error channel, and the fail branch re-wraps `ReconcileError(rawCause)` identically, so the default path is byte-for-byte unchanged; (D) the `catchAll` ternary unifies to `Effect<{map,reinitEvent}, UploadError, never>` with `R = never`; (E) `Option.isSome` narrowing is sound. Tests are surgical, flipped in place (no duplicate / no coverage regression), and the DD3 deferral is technically justified (both blockers — discarded reconciled chunks + opaque S3 `InvalidPart` — are real).
+
+### Findings & dispositions
+
+- **LOW-1** (`upload-stream.ts` reconcile ternary): redundant `reinitOnStale !== undefined` guard vs the `?.` form. **Declined** — the explicit form is clearer about intent; no behavioural difference. (`receiving-code-review` skepticism: a pure style nit with no reachable failure mode.)
+- **LOW-2** (`upload-stream.ts` `reinitOnStale` TSDoc): reinit silently bypasses `resumeFrom` content-digest validation — correct (the old upload + its digest no longer apply) but undocumented. **Applied** — added a TSDoc sentence making the bypass explicit.
+- **LOW-3** (`resume-error-edges.test.ts` 11.3-INT-003): invariant B was proven only indirectly because the reinit arm had no `resumeFrom` set — so the "fresh id wins over a *stale* `resumeFrom.uploadId`" path was never exercised. **Applied** — added arm (c): a stale-`resumeFrom` reinit that captures `completeUpload`'s `uploadId` argument, directly locking invariant B end-to-end. (This was the sharpest finding — it exposed a genuine coverage gap, not a nit.)
+
+**Dev decision:** applied LOW-2 + LOW-3, declined LOW-1. `receiving-code-review` skepticism applied in both directions — LOW-3 was upgraded from the reviewer's "optional test hardening" framing to a real gap worth closing (the original arm never set `resumeFrom`, so the most important invariant was under-tested). Triptyque re-verified green post-changes (core 206/206, adapters 61/61, typecheck 5/5, build 2/2); arm (c) lives in the same `it.effect` so core count holds at 206.
