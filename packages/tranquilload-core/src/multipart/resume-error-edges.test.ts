@@ -104,31 +104,55 @@ describe("Story 11.3 — resume + reconcile + error-mapping edges", () => {
 
   // --- 11.3-INT-003 (F#12) — resume against a deleted uploadId -------------
   // The server reports the persisted uploadId as gone (S3 `NoSuchUpload`) when
-  // the resume reconcile runs. Phase-accurate variant is `ReconcileError`
-  // (the failure happens during the reconcile phase) carrying the S3-shaped
-  // cause. The lib does NOT auto-re-init a fresh multipart upload — that is an
-  // Epic 13 candidate (auto-reinit on stale uploadId). Locked: no PUT happens.
-  it.effect("11.3-INT-003 (F#12) — resume against deleted uploadId (NoSuchUpload) surfaces ReconcileError, no auto-reinit", () =>
+  // the resume reconcile runs. Two arms:
+  //  (a) DEFAULT (no `reinitOnStale`) — phase-accurate `ReconcileError` carrying
+  //      the S3-shaped cause; no PUT happens (non-breaking default preserved).
+  //  (b) OPT-IN `reinitOnStale` + `initiate` — the lib abandons the stale
+  //      uploadId, re-initiates a fresh multipart and completes from part 1.
+  // Story 13.2 flipped arm (b) from the Epic 11 lock ("no auto-reinit").
+  it.effect("11.3-INT-003 (F#12) — resume against deleted uploadId (NoSuchUpload): default fails fast, reinitOnStale auto-reinitiates from part 1", () =>
     Effect.gen(function* () {
       const noSuchUpload = Object.assign(
         new Error("The specified multipart upload does not exist"),
         { Code: "NoSuchUpload", $metadata: { httpStatusCode: 404 } }
       )
-      let uploadPartCalls = 0
 
-      const result = yield* run({
+      // (a) Default (no reinitOnStale) — fail-fast ReconcileError, no PUT.
+      let defaultCalls = 0
+      const failed = yield* run({
         stream: fromBytes(new Uint8Array(20).fill(1)),
         chunkSize: 10,
         reconcileCompletedParts: () => Promise.reject(noSuchUpload),
-        uploadPart: (n) => { uploadPartCalls++; return `etag-${n}` },
+        uploadPart: (n) => { defaultCalls++; return `etag-${n}` },
         completeUpload: () => {},
       }).pipe(Effect.flip)
 
-      expect(result).toBeInstanceOf(ReconcileError)
-      expect((result as ReconcileError).cause).toBe(noSuchUpload)
-      expect(((result as ReconcileError).cause as { Code: string }).Code).toBe("NoSuchUpload")
-      // CURRENT BEHAVIOUR — Epic 13 candidate: no auto-re-init on stale uploadId.
-      expect(uploadPartCalls).toBe(0)
+      expect(failed).toBeInstanceOf(ReconcileError)
+      expect((failed as ReconcileError).cause).toBe(noSuchUpload)
+      expect(((failed as ReconcileError).cause as { Code: string }).Code).toBe("NoSuchUpload")
+      expect(defaultCalls).toBe(0)
+
+      // (b) Opt-in reinitOnStale + initiate — abandon stale uploadId, re-initiate
+      // from part 1, complete against the fresh uploadId.
+      let reinitCalls = 0
+      const events = yield* run({
+        stream: fromBytes(new Uint8Array(20).fill(1)),
+        chunkSize: 10,
+        reconcileCompletedParts: () => Promise.reject(noSuchUpload),
+        reinitOnStale: (cause) => (cause as { Code?: string })?.Code === "NoSuchUpload",
+        initiate: () => ({ uploadId: "reinit-fresh-id" }),
+        uploadPart: (n) => { reinitCalls++; return `etag-${n}` },
+        completeUpload: () => {},
+      })
+
+      // Re-initiated from scratch: both parts (20 bytes / chunkSize 10) uploaded fresh.
+      expect(reinitCalls).toBe(2)
+      // A fresh UploadInitiated for the new uploadId was emitted (observability preserved).
+      const initiated = events.find(e => e._tag === "UploadInitiated")
+      expect(initiated).toMatchObject({ _tag: "UploadInitiated", uploadId: "reinit-fresh-id" })
+      // Terminal completion against the fresh uploadId.
+      const completed = events.find(e => e._tag === "UploadCompleted")
+      expect(completed).toMatchObject({ _tag: "UploadCompleted", uploadId: "reinit-fresh-id", totalParts: 2 })
     })
   )
 
@@ -176,8 +200,14 @@ describe("Story 11.3 — resume + reconcile + error-mapping edges", () => {
   // part between ListParts and complete, so completeUpload rejects with
   // `InvalidPart`. The divergence is NOT detected mid-flight: it surfaces only
   // at the complete phase, mapped to `CompleteUploadError` (phase-accurate).
-  // CURRENT BEHAVIOUR — Epic 13 candidate: detect/re-upload a GC'd reconciled
-  // part instead of failing at complete.
+  // STILL A LOCK — DEFERRED from Story 13.2 (DD3): "detect/re-upload a GC'd
+  // reconciled part" is NOT a quick-win flip. Two tensions block it — (1) the
+  // reconciled chunk is discarded after the skip and the source stream is
+  // drained by the complete phase, so re-upload needs unbounded opt-in
+  // retention (memory-safety, cf. 13.6); (2) the protocol-agnostic core can't
+  // tell which part S3's `InvalidPart` refers to without parsing S3 error
+  // strings. Moved to a follow-up spike (Story 13.7 or fold into 13.5). This
+  // test stays GREEN, locking the current CompleteUploadError-at-complete.
   it.effect("11.3-INT-005 (F#14) — stale reconciled part surfaces as CompleteUploadError at complete phase", () =>
     Effect.gen(function* () {
       const invalidPart = Object.assign(

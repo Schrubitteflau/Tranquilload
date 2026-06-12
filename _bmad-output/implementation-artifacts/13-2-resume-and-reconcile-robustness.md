@@ -4,7 +4,7 @@ baseline_commit: 88f7253
 
 # Story 13.2: Resume & Reconcile Robustness
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -28,37 +28,37 @@ so that a cross-session resume against drifted server-side state recovers gracef
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: `reinitOnStale` predicate + reinit orchestration (AC: #1) — core
-  - [ ] Add `readonly reinitOnStale?: (cause: unknown) => boolean` to `UploadMultipartOptions` (`upload-stream.ts`), with TSDoc: opt-in; receives the **raw** reconcile rejection (pre-`ReconcileError`); return `true` to abandon the stale `uploadId` and re-initiate from part 1; **requires `initiate` to be present** (without it, a stale match falls through to `ReconcileError`).
-  - [ ] Destructure `reinitOnStale` in the options block (`upload-stream.ts:133-146`).
-  - [ ] **Reorder:** move the `runFreshInit` Effect definition (`:197-217`) ABOVE the reconcile block (`:189-195`) so it can be reused on reinit. (It has no dependency on `reconciledMap`.)
-  - [ ] Replace the eager reconcile (`:189-195`) with a reconcile Effect that yields `{ map, reinitEvent: Option<UploadInitiated> }`:
+- [x] Task 1: `reinitOnStale` predicate + reinit orchestration (AC: #1) — core
+  - [x] Add `readonly reinitOnStale?: (cause: unknown) => boolean` to `UploadMultipartOptions` (`upload-stream.ts`), with TSDoc: opt-in; receives the **raw** reconcile rejection (pre-`ReconcileError`); return `true` to abandon the stale `uploadId` and re-initiate from part 1; **requires `initiate` to be present** (without it, a stale match falls through to `ReconcileError`).
+  - [x] Destructure `reinitOnStale` in the options block (`upload-stream.ts:133-146`).
+  - [x] **Reorder:** move the `runFreshInit` Effect definition (`:197-217`) ABOVE the reconcile block (`:189-195`) so it can be reused on reinit. (It has no dependency on `reconciledMap`.)
+  - [x] Replace the eager reconcile (`:189-195`) with a reconcile Effect that yields `{ map, reinitEvent: Option<UploadInitiated> }`:
     - success → `{ map: new Map(parts...), reinitEvent: Option.none() }`
     - failure → in `catchAll((rawCause) => ...)`: if `reinitOnStale?.(rawCause) === true && initiate !== undefined`, run `runFreshInit` → `{ map: new Map() /* empty, fresh from part 1 */, reinitEvent: Option.some(event) }`; else `Effect.fail(new ReconcileError(rawCause))`. **Critical:** the predicate must see the RAW cause, so replace the current `Effect.mapError(... ReconcileError)` with a `catchAll` (the raw rejection flows through `normalizeCallback`'s error channel).
-  - [ ] Make `setupStream` reinit-aware: when `Option.isSome(reinitEvent)`, emit the captured `UploadInitiated` (refUploadId already set by `runFreshInit`) and SKIP both `runResumeSetup` and a second `runFreshInit` (no double-initiate). Branch order: reinit → resume → fresh-init → empty.
-  - [ ] Flip `resume-error-edges.test.ts` 11.3-INT-003 (F#12): add `initiate: () => ({ uploadId: "reinit-fresh-id" })` + `reinitOnStale: (cause) => (cause as { Code?: string })?.Code === "NoSuchUpload"`; invert assertions → upload completes, `uploadPartCalls === 2` (20 bytes / chunkSize 10), terminal event is `UploadCompleted` with `uploadId: "reinit-fresh-id"` and `totalParts: 2`; strip the `// CURRENT BEHAVIOUR — Epic 13 candidate` comment, keep the `11.3-INT-003 (F#12)` prefix, update the description to "...auto-reinitiates and completes from part 1".
+  - [x] Make `setupStream` reinit-aware: when `Option.isSome(reinitEvent)`, emit the captured `UploadInitiated` (refUploadId already set by `runFreshInit`) and SKIP both `runResumeSetup` and a second `runFreshInit` (no double-initiate). Branch order: reinit → resume → fresh-init → empty.
+  - [x] Flip `resume-error-edges.test.ts` 11.3-INT-003 (F#12): add `initiate: () => ({ uploadId: "reinit-fresh-id" })` + `reinitOnStale: (cause) => (cause as { Code?: string })?.Code === "NoSuchUpload"`; invert assertions → upload completes, `uploadPartCalls === 2` (20 bytes / chunkSize 10), terminal event is `UploadCompleted` with `uploadId: "reinit-fresh-id"` and `totalParts: 2`; strip the `// CURRENT BEHAVIOUR — Epic 13 candidate` comment, keep the `11.3-INT-003 (F#12)` prefix, update the description to "...auto-reinitiates and completes from part 1".
 
-- [ ] Task 2: `resumeUploadId` adapter option (AC: #2) — S3 adapter (net-new, DD2)
-  - [ ] Add `readonly resumeUploadId?: string` to `S3MultipartUploadOptions` (`s3-multipart-upload.ts:20-26`), TSDoc: cross-session resume — seeds `storedUploadId` so `uploadPart` signs against the resumed `uploadId` when `initiate` is not called this session.
-  - [ ] Change `let storedUploadId = ""` (`:52`) → seed from the option: `let storedUploadId = options.resumeUploadId ?? ""` (destructure `resumeUploadId` in the `const { ... } = options` block at `:34` for consistency).
-  - [ ] Add a net-new test in `s3-multipart-upload.test.ts`: construct with `resumeUploadId: "resumed-upload-id"`, call `uploadPart(1, chunk)` WITHOUT calling `initiate`, assert `getPresignedUrl` was invoked with `(1, "resumed-upload-id")` (not `""`). Add a sibling assertion that the default (no `resumeUploadId`) still passes `""` to `getPresignedUrl` pre-`initiate` (guards the non-breaking default). Mock `fetch` to return an `ok` response with an `ETag` header (mirror the existing `uploadPart` tests' fetch stub).
+- [x] Task 2: `resumeUploadId` adapter option (AC: #2) — S3 adapter (net-new, DD2)
+  - [x] Add `readonly resumeUploadId?: string` to `S3MultipartUploadOptions` (`s3-multipart-upload.ts:20-26`), TSDoc: cross-session resume — seeds `storedUploadId` so `uploadPart` signs against the resumed `uploadId` when `initiate` is not called this session.
+  - [x] Change `let storedUploadId = ""` (`:52`) → seed from the option: `let storedUploadId = options.resumeUploadId ?? ""` (destructure `resumeUploadId` in the `const { ... } = options` block at `:34` for consistency).
+  - [x] Add a net-new test in `s3-multipart-upload.test.ts`: construct with `resumeUploadId: "resumed-upload-id"`, call `uploadPart(1, chunk)` WITHOUT calling `initiate`, assert `getPresignedUrl` was invoked with `(1, "resumed-upload-id")` (not `""`). Add a sibling assertion that the default (no `resumeUploadId`) still passes `""` to `getPresignedUrl` pre-`initiate` (guards the non-breaking default). Mock `fetch` to return an `ok` response with an `ETag` header (mirror the existing `uploadPart` tests' fetch stub).
 
-- [ ] Task 3: Re-tag the deferred lock (AC: #3) — DD3
-  - [ ] In `resume-error-edges.test.ts`, edit ONLY the comment block above 11.3-INT-005 (F#14): replace "Epic 13 candidate: detect/re-upload a GC'd reconciled part instead of failing at complete." with a one-to-two-line note that this is DEFERRED from Story 13.2 (DD3) for memory-safety (reconciled chunks are discarded after the skip, source stream is drained by complete phase) + protocol-agnostic-detection (core can't identify the S3 `InvalidPart` part) reasons. **Do NOT flip the assertion** — the test stays green, still locking `CompleteUploadError` at complete.
+- [x] Task 3: Re-tag the deferred lock (AC: #3) — DD3
+  - [x] In `resume-error-edges.test.ts`, edit ONLY the comment block above 11.3-INT-005 (F#14): replace "Epic 13 candidate: detect/re-upload a GC'd reconciled part instead of failing at complete." with a one-to-two-line note that this is DEFERRED from Story 13.2 (DD3) for memory-safety (reconciled chunks are discarded after the skip, source stream is drained by complete phase) + protocol-agnostic-detection (core can't identify the S3 `InvalidPart` part) reasons. **Do NOT flip the assertion** — the test stays green, still locking `CompleteUploadError` at complete.
 
-- [ ] Task 4: Changesets (pre-1.0 PATCH)
-  - [ ] `.changeset/epic13-core-reinit-on-stale.md` — `@tranquilload/core` patch (opt-in `reinitOnStale`).
-  - [ ] `.changeset/epic13-adapters-resume-upload-id.md` — `@tranquilload/adapters` patch (opt-in `resumeUploadId`).
-  - [ ] Both note "opt-in, default behaviour unchanged"; pre-1.0 patch per the versioning rule.
+- [x] Task 4: Changesets (pre-1.0 PATCH)
+  - [x] `.changeset/epic13-core-reinit-on-stale.md` — `@tranquilload/core` patch (opt-in `reinitOnStale`).
+  - [x] `.changeset/epic13-adapters-resume-upload-id.md` — `@tranquilload/adapters` patch (opt-in `resumeUploadId`).
+  - [x] Both note "opt-in, default behaviour unchanged"; pre-1.0 patch per the versioning rule.
 
-- [ ] Task 5: Triptyque verification
-  - [ ] `pnpm turbo build` green
-  - [ ] `pnpm -r test` green (core + adapters; note new counts)
-  - [ ] `pnpm turbo typecheck` green
+- [x] Task 5: Triptyque verification
+  - [x] `pnpm turbo build` green
+  - [x] `pnpm -r test` green (core + adapters; note new counts)
+  - [x] `pnpm turbo typecheck` green
 
-- [ ] Task 6: Traceability + docs
-  - [ ] Record below: 11.3-INT-003 flipped; resumeUploadId net-new test added; 11.3-INT-005 re-tagged (not flipped).
-  - [ ] Check whether the README documents `reconcileCompletedParts` / resume in a way that should mention `reinitOnStale` or the adapter `resumeUploadId`. If a README `ts` fenced block changes, the doctest harness re-checks it (smoke). If untouched, nothing to update.
+- [x] Task 6: Traceability + docs
+  - [x] Record below: 11.3-INT-003 flipped; resumeUploadId net-new test added; 11.3-INT-005 re-tagged (not flipped).
+  - [x] Check whether the README documents `reconcileCompletedParts` / resume in a way that should mention `reinitOnStale` or the adapter `resumeUploadId`. If a README `ts` fenced block changes, the doctest harness re-checks it (smoke). If untouched, nothing to update.
 
 ## Dev Notes
 
@@ -162,8 +162,33 @@ claude-opus-4-8 (Opus 4.8) — dev per the permanent Epics 6–9 rule (Opus for 
 
 ### Debug Log References
 
+- `pnpm vitest run src/multipart/resume-error-edges.test.ts` (focused) → 6/6 green on the first run, including the flipped two-arm 11.3-INT-003. No red-phase iteration needed — the reconcile→reinit restructure typed and behaved correctly first pass.
+- `pnpm -r test` → core 206/206 (unchanged count: 11.3-INT-003 flipped in place, not duplicated), adapters 61/61 (+2 from the net-new resumeUploadId tests; `s3-multipart-upload.test.ts` 8→10).
+- `pnpm turbo build` ✅ 2/2 · `pnpm turbo typecheck` ✅ 5/5.
+
 ### Completion Notes List
+
+- **Second behaviour-CHANGING Epic 13 story — 2 of 3 epic sub-changes shipped, 1 deferred (DD3).** Both shipped changes are opt-in with defaults that preserve current behaviour → non-breaking → pre-1.0 patch.
+- **AC#1 (core `reinitOnStale`):** added `reinitOnStale?: (cause: unknown) => boolean` to `UploadMultipartOptions`. Restructured the orchestration exactly per the story's control-flow section: moved `runFreshInit` above the reconcile; replaced the eager `mapError → ReconcileError` reconcile with a `reconcileSetup` Effect yielding `{ map, reinitEvent: Option<UploadInitiated> }` whose `catchAll` sees the **raw** rejection (so the predicate is protocol-agnostic) and — when `reinitOnStale(rawCause) && initiate` — runs `runFreshInit` (empty map, `Some(event)`); else re-wraps as `ReconcileError(rawCause)`. `setupStream` gained a leading `Option.isSome(reinitEvent)` branch that emits the captured `UploadInitiated` and skips a second initiate — **exactly one initiate per upload** invariant preserved.
+- **AC#1 flip (11.3-INT-003 / F#12):** edited in place (no duplicate). Kept arm (a) = DEFAULT (no predicate) → `ReconcileError`, 0 PUTs (locks the non-breaking default); added arm (b) = opt-in `reinitOnStale` + `initiate` → `reinitCalls === 2`, a fresh `UploadInitiated{uploadId:"reinit-fresh-id"}`, terminal `UploadCompleted{uploadId:"reinit-fresh-id", totalParts:2}`. Surgical assertions on exact uploadId + part count.
+- **AC#2 (adapter `resumeUploadId`):** net-new option on `S3MultipartUploadOptions`; `let storedUploadId = resumeUploadId ?? ""` seeds the closure so `uploadPart` signs against the resumed id without `initiate`. Net-new test (DD2 — no lock to flip): resume arm asserts `getPresignedUrl(2, "resumed-upload-id")`; default arm asserts `getPresignedUrl(1, "")` pre-initiate (non-breaking baseline). `completeUpload` needed no change — it already receives `uploadId` as a param from the core's `refUploadId`.
+- **AC#3 (DEFERRED — DD3):** 11.3-INT-005 (F#14) NOT flipped — comment re-tagged to record the two blockers (reconciled chunks discarded + source drained by complete phase = unbounded retention; protocol-agnostic core can't identify S3's `InvalidPart` part). Recommended home: new spike-gated Story 13.7 or fold into 13.5. Test stays green, still locking `CompleteUploadError`-at-complete.
+- **README untouched (deliberate, matches 13.1):** the cross-session-resume `ts` example is doctest-checked; the new options are opt-in and fully documented via TSDoc (visible in `.d.mts`/IDE). Adding them to the README would drag in the separate doctest tier (not part of this story's triptyque gate). Optional discoverability follow-up — flagged, not done.
+- **Scope note:** e2e/integration tiers (`tests/`, MinIO/Playwright) NOT run — out of scope (both changes unit-level; S3 mocked, callbacks stubbed). Triptyque is the gate.
+- **Reviewer flags:** (1) confirm the `reconcileSetup` `catchAll` two-arm conditional unifies cleanly and that R=never holds (typecheck passed, but worth a second look); (2) confirm the reinit path's single-initiate invariant under a `resumeFrom`-set resume (setupStream's `reinitEvent` branch fires before the `resumeFrom` branch, so refUploadId stays the FRESH id — not overwritten by the stale `resumeFrom.uploadId`); (3) confirm `Stream.make(reinitEvent.value)` after `Option.isSome` narrows correctly (no `getOrThrow` needed).
 
 ### Change Log
 
+- 2026-06-12 — Story 13.2 dev (Opus 4.8): resume/reconcile robustness, 2 of 3 sub-changes. **Lib:** `upload-stream.ts` (opt-in `reinitOnStale` predicate + reconcile→reinit orchestration restructure: `runFreshInit` reordered, `reconcileSetup` Effect, reinit-aware `setupStream`); `s3-multipart-upload.ts` (opt-in `resumeUploadId` seeds `storedUploadId`). **Tests:** flipped 11.3-INT-003 (F#12) in place (default arm + reinit arm); re-tagged (not flipped) 11.3-INT-005 (F#14); +2 net-new adapter resume tests. **2 patch changesets.** Triptyque green (build 2/2, core 206/206, adapters 61/61, typecheck 5/5). DEFERRED sub-change 3 (DD3). No e2e (out of scope).
+
 ### File List
+
+- **Modified (lib):** `packages/tranquilload-core/src/multipart/upload-stream.ts`
+- **Modified (lib):** `packages/tranquilload-adapters/src/protocols/s3-multipart-upload.ts`
+- **Modified (test):** `packages/tranquilload-core/src/multipart/resume-error-edges.test.ts`
+- **Modified (test):** `packages/tranquilload-adapters/src/protocols/s3-multipart-upload.test.ts`
+- **Added:** `.changeset/epic13-core-reinit-on-stale.md`
+- **Added:** `.changeset/epic13-adapters-resume-upload-id.md`
+- **Modified:** `_bmad-output/implementation-artifacts/13-2-resume-and-reconcile-robustness.md` (this file)
+- **Modified:** `_bmad-output/implementation-artifacts/sprint-status.yaml` (13-2 → in-progress → review)
+- **Modified:** `_bmad-output/planning-artifacts/epics.md` (§ Story 13.2 rescope note — done at story creation)

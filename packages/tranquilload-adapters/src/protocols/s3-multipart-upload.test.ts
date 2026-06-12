@@ -62,6 +62,51 @@ describe("s3MultipartUpload", () => {
     expect(etag).toBe("etag-abc")
   })
 
+  // Story 13.2 (DD2) — cross-session resume: `uploadPart` must sign against the
+  // caller-supplied `resumeUploadId` when `initiate` is NOT called this session,
+  // instead of the empty `storedUploadId` closure. Net-new (no prior lock).
+  it("13.2 — resumeUploadId seeds uploadPart signing without calling initiate", async () => {
+    const getPresignedUrl = vi.fn().mockResolvedValue("https://s3.example.com/presigned")
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, headers: new Headers({ ETag: '"etag-r"' }) })
+    )
+
+    const adapter = s3MultipartUpload({
+      bucket: "b",
+      key: "k",
+      getPresignedUrl,
+      s3Client: makeMockS3Client(),
+      resumeUploadId: "resumed-upload-id",
+    })
+
+    // No initiate() call — straight to uploadPart, as on a cross-session resume.
+    const etag = await adapter.uploadPart(2, new Uint8Array([9]))
+
+    expect(getPresignedUrl).toHaveBeenCalledWith(2, "resumed-upload-id")
+    expect(etag).toBe("etag-r")
+  })
+
+  it("13.2 — default (no resumeUploadId): uploadPart pre-initiate signs against empty uploadId (non-breaking baseline)", async () => {
+    const getPresignedUrl = vi.fn().mockResolvedValue("https://s3.example.com/presigned")
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, headers: new Headers({ ETag: '"etag-d"' }) })
+    )
+
+    const adapter = s3MultipartUpload({
+      bucket: "b",
+      key: "k",
+      getPresignedUrl,
+      s3Client: makeMockS3Client(),
+    })
+
+    // Without resumeUploadId and without initiate(), storedUploadId is "".
+    await adapter.uploadPart(1, new Uint8Array([1]))
+
+    expect(getPresignedUrl).toHaveBeenCalledWith(1, "")
+  })
+
   it("uploadPart returns ETag stripped of quotes", async () => {
     vi.stubGlobal(
       "fetch",

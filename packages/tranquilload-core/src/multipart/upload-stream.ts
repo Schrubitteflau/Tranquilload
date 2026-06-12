@@ -118,6 +118,31 @@ export interface UploadMultipartOptions {
   readonly signal?: AbortSignal
   readonly retrySchedule?: Schedule.Schedule<unknown, PartUploadError>
   readonly circuitBreaker?: CircuitBreakerConfig
+  /**
+   * Opt-in recovery for a resume whose persisted `uploadId` the server has
+   * deleted / garbage-collected. The predicate receives the **raw**
+   * `reconcileCompletedParts` rejection (before it is wrapped as
+   * `ReconcileError`); return `true` to classify it as a stale `uploadId`.
+   *
+   * On a `true` result, **and only when an `initiate` callback is supplied**,
+   * the lib abandons the stale upload and re-initiates a fresh multipart from
+   * part 1 (the reconciled-parts map is discarded), emitting a fresh
+   * `UploadInitiated` for the new `uploadId`. Without an `initiate` callback the
+   * stale failure surfaces as `ReconcileError` (current behaviour) — so this
+   * option is purely additive.
+   *
+   * **Protocol-agnostic by design:** the core never inspects the cause shape
+   * (e.g. an S3 `NoSuchUpload` code) — only the caller knows what "stale" means
+   * for their backend. Default (`undefined`) preserves the fail-fast
+   * `ReconcileError`.
+   *
+   * @example
+   * ```ts
+   * reinitOnStale: (cause) =>
+   *   (cause as { Code?: string })?.Code === "NoSuchUpload"
+   * ```
+   */
+  readonly reinitOnStale?: (cause: unknown) => boolean
 }
 
 const DEFAULT_MAX_CONCURRENCY = 4
@@ -143,6 +168,7 @@ export const uploadMultipartEffect = (
     maxConcurrency = DEFAULT_MAX_CONCURRENCY,
     signal,
     retrySchedule = DEFAULT_RETRY_SCHEDULE,
+    reinitOnStale,
   } = options
 
   if (!Number.isFinite(chunkSize) || chunkSize <= 0 || !Number.isInteger(chunkSize)) {
@@ -186,14 +212,6 @@ export const uploadMultipartEffect = (
         ? yield* makeCircuitBreaker(options.circuitBreaker)
         : null
 
-      const reconciledMap: Map<number, string> = reconcileCompletedParts
-        ? new Map(
-            (yield* normalizeCallback(reconcileCompletedParts).pipe(
-              Effect.mapError((cause): UploadError => new ReconcileError(cause))
-            )).map(p => [p.partNumber, p.etag])
-          )
-        : new Map()
-
       const runFreshInit: Effect.Effect<UploadInitiated, UploadError> = Effect.gen(
         function* () {
           const { uploadId } = yield* normalizeCallback(initiate!).pipe(
@@ -216,6 +234,41 @@ export const uploadMultipartEffect = (
         }
       )
 
+      // Reconcile previously-completed parts. On a reconcile failure the caller's
+      // `reinitOnStale` predicate classifies as a stale/GC'd uploadId (e.g. S3
+      // `NoSuchUpload`) — and only when an `initiate` callback is available —
+      // abandon the stale upload and re-initiate a fresh multipart from part 1
+      // (empty reconciled map, fresh `UploadInitiated`). The predicate inspects
+      // the RAW rejection (pre-`ReconcileError`); staleness detection is
+      // caller-supplied so the core stays protocol-agnostic. Default (no
+      // predicate, or no `initiate`) preserves the fail-fast `ReconcileError`.
+      const reconcileSetup: Effect.Effect<
+        { map: Map<number, string>; reinitEvent: Option.Option<UploadInitiated> },
+        UploadError
+      > = reconcileCompletedParts
+        ? normalizeCallback(reconcileCompletedParts).pipe(
+            Effect.map((parts) => ({
+              map: new Map<number, string>(parts.map((p) => [p.partNumber, p.etag] as const)),
+              reinitEvent: Option.none<UploadInitiated>(),
+            })),
+            Effect.catchAll((rawCause) =>
+              reinitOnStale !== undefined && reinitOnStale(rawCause) && initiate !== undefined
+                ? runFreshInit.pipe(
+                    Effect.map((event) => ({
+                      map: new Map<number, string>(),
+                      reinitEvent: Option.some(event),
+                    }))
+                  )
+                : Effect.fail(new ReconcileError(rawCause))
+            )
+          )
+        : Effect.succeed({
+            map: new Map<number, string>(),
+            reinitEvent: Option.none<UploadInitiated>(),
+          })
+
+      const { map: reconciledMap, reinitEvent } = yield* reconcileSetup
+
       const runResumeSetup: Effect.Effect<void, UploadError> = Effect.gen(function* () {
         // `resumeFrom` is non-undefined here (checked by setupStream selector below).
         const rf = resumeFrom!
@@ -233,12 +286,17 @@ export const uploadMultipartEffect = (
         yield* Ref.set(refUploadId, rf.uploadId)
       })
 
+      // When a stale reconcile triggered a re-initiate, emit the fresh
+      // `UploadInitiated` (refUploadId already set by `runFreshInit`) and skip
+      // both resume-setup and a second initiate — exactly one initiate per upload.
       const setupStream: Stream.Stream<UploadEvent, UploadError, never> =
-        resumeFrom !== undefined
-          ? Stream.fromEffect(runResumeSetup).pipe(Stream.drain)
-          : initiate !== undefined
-            ? Stream.fromEffect(runFreshInit)
-            : Stream.empty
+        Option.isSome(reinitEvent)
+          ? Stream.make(reinitEvent.value)
+          : resumeFrom !== undefined
+            ? Stream.fromEffect(runResumeSetup).pipe(Stream.drain)
+            : initiate !== undefined
+              ? Stream.fromEffect(runFreshInit)
+              : Stream.empty
 
       const makeUploadOne = (
         partNumber: number,

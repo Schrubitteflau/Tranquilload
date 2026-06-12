@@ -23,6 +23,16 @@ export interface S3MultipartUploadOptions {
   chunkSize?: number
   getPresignedUrl: (partNumber: number, uploadId: string) => string | Promise<string>
   s3Client: S3Client
+  /**
+   * Cross-session resume: a previously-persisted S3 `uploadId`. When set, it
+   * seeds the internal `storedUploadId` so `uploadPart` signs presigned URLs
+   * against the resumed upload even when `initiate` is **not** called this
+   * session. If `initiate` does run, it overwrites this with the freshly
+   * created `uploadId` (a re-initiate wins). Default (`undefined`) keeps the
+   * pre-1.0 behaviour: `storedUploadId` starts empty and is set only by
+   * `initiate`.
+   */
+  resumeUploadId?: string
 }
 
 export function s3MultipartUpload(options: S3MultipartUploadOptions): {
@@ -31,7 +41,7 @@ export function s3MultipartUpload(options: S3MultipartUploadOptions): {
   uploadPart: (partNumber: number, chunk: Uint8Array) => Promise<string>
   completeUpload: (uploadId: string, parts: ReadonlyArray<CompletedPart>) => Promise<void>
 } {
-  const { bucket, key, chunkSize = S3_MIN_PART_SIZE, getPresignedUrl, s3Client } = options
+  const { bucket, key, chunkSize = S3_MIN_PART_SIZE, getPresignedUrl, s3Client, resumeUploadId } = options
 
   if (chunkSize < S3_MIN_PART_SIZE) {
     throw new Error(
@@ -49,7 +59,9 @@ export function s3MultipartUpload(options: S3MultipartUploadOptions): {
     )
   }
 
-  let storedUploadId = ""
+  // Seed from a resumed uploadId so cross-session resume can sign part URLs
+  // without calling `initiate`; `initiate` (if invoked) overwrites this.
+  let storedUploadId = resumeUploadId ?? ""
 
   const initiate = async (): Promise<{ uploadId: string }> => {
     const result = await s3Client.createMultipartUpload({ Bucket: bucket, Key: key })

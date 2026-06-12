@@ -141,7 +141,7 @@ development_status:
   # Epic 12 (circuit-breaker, R-P2-11) tracked separately. See epics.md L952-1090.
   epic-13: in-progress
   13-1-api-boundary-input-guards: done
-  13-2-resume-and-reconcile-robustness: backlog
+  13-2-resume-and-reconcile-robustness: review
   13-3-abort-and-cleanup-recovery: backlog
   13-4-resilience-policies-and-timeouts: backlog
   13-5-observability-and-integrity: backlog
