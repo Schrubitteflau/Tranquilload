@@ -1007,9 +1007,9 @@ So that a cross-session resume against drifted server-side state recovers gracef
 
 **Given** `reconcileCompletedParts` returns a part the server GCs before `/complete`
 **When** the upload reaches the complete phase
-**Then** the lib detects the missing part and re-uploads it instead of dead-ending. Flips locking test 11.3-INT-005 (F#14) from "surfaces as CompleteUploadError at complete phase" to "re-uploads and completes".
+**Then** the lib detects the missing part and re-uploads it instead of dead-ending. Flips locking test 11.3-INT-005 (F#14) from "surfaces as CompleteUploadError at complete phase" to "re-uploads and completes". **🔻 DEFERRED from Story 13.2 (2026-06-12, Project Lead, via API-validation pass)** — this is NOT a quick-win flip: it carries a memory-safety tension (reconciled chunks are discarded after the skip and the source stream is drained by the complete phase, so re-upload requires unbounded opt-in retention) + a protocol-agnostic-detection problem (the core can't identify which part S3's `InvalidPart` refers to without parsing S3 error strings). Moved to a follow-up spike (recommended new Story 13.7 "Reconciled-part integrity & re-upload", or fold into 13.5). 11.3-INT-005 stays a LOCK (re-tagged, not flipped) until then.
 
-**Coverage:** flips 11.3-INT-003 + 11.3-INT-005, closes the 11.7 S3-resume gap; persona 11.4-E2E-007 corroborates. Touches core resume orchestration + S3 adapter. **Quick-win tier.** Risk cluster R-P2-6.
+**Coverage:** Story 13.2 ships **2 of 3** sub-changes — flips 11.3-INT-003 (`reinitOnStale`, core) + closes the 11.7 S3-resume gap (`resumeUploadId`, net-new adapter test). The third (re-upload GC'd reconciled part, would flip 11.3-INT-005) is **DEFERRED** (see above). Persona 11.4-E2E-007 corroborates. Touches core resume orchestration + S3 adapter. **Quick-win tier.** Risk cluster R-P2-6.
 
 ### Story 13.3: Abort & Cleanup Recovery
 
