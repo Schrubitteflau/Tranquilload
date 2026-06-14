@@ -220,9 +220,6 @@ export const uploadMultipartEffect = (
     failFast,
   } = options
 
-  const partTimeoutDuration =
-    partTimeout !== undefined ? Duration.decode(partTimeout) : undefined
-
   if (!Number.isFinite(chunkSize) || chunkSize <= 0 || !Number.isInteger(chunkSize)) {
     throw new TypeError(
       `uploadMultipart: chunkSize must be a positive finite integer, got ${chunkSize}`
@@ -251,6 +248,11 @@ export const uploadMultipartEffect = (
       throw new ResumeMismatchError("content_mismatch")
     }
   }
+
+  // Decoded after the synchronous pre-flight guards so a malformed `partTimeout`
+  // cannot preempt the documented `chunkSize`/`resumeFrom` throws.
+  const partTimeoutDuration =
+    partTimeout !== undefined ? Duration.decode(partTimeout) : undefined
 
   return Stream.unwrap(
     Effect.gen(function* () {

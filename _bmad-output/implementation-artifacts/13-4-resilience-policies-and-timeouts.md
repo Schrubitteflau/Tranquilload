@@ -4,7 +4,7 @@ baseline_commit: bbf2a45
 
 # Story 13.4: Resilience Policies & Timeouts
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -211,4 +211,22 @@ claude-opus-4-8 (Opus 4.8) — dev per the permanent Epics 6–9 rule (Opus for 
 - **Added:** `.changeset/epic13-core-part-timeout.md`
 - **Added:** `.changeset/epic13-core-fail-fast.md`
 - **Modified:** `_bmad-output/implementation-artifacts/13-4-resilience-policies-and-timeouts.md` (this file)
-- **Modified:** `_bmad-output/implementation-artifacts/sprint-status.yaml` (13-4 → in-progress → review)
+- **Modified:** `_bmad-output/implementation-artifacts/sprint-status.yaml` (13-4 → in-progress → review → done)
+
+## Senior Developer Review (AI)
+
+**Reviewer:** independent Opus 4.8 `code-reviewer` agent (fresh context — Codex unavailable; another Opus stands in per user direction).
+**Date:** 2026-06-14
+**Outcome:** ✅ **Approve with nits** — 0 HIGH / 0 MEDIUM / 3 LOW (1 applied, 2 declined).
+
+### Verdict
+
+Clean, well-scoped resilience story. The reviewer traced every load-bearing invariant rather than rubber-stamping, and all held: (1) the `partTimeout` `Effect.timeoutFail` wraps the **per-attempt** `single` inside the retry loop (not the outer part effect), with the error channel staying `Effect<string, PartUploadError>` (no widening) — so a timeout genuinely feeds `retrySchedule` and, on budget exhaustion, surfaces as `MaxRetriesExceededError(cause: PartTimeoutError)`, with `Duration.decode` done once and reused; (2) `PartTimeoutError` is correctly **cause-only** — exported but not a `UploadError` union member — and the reviewer *independently* cross-checked that this neither broke the exhaustive `switch` in `upload-error.test.ts` NOR the `Match.tag` exhaustiveness in the doctest fixture `tests/integration/global-setup.ts` (both would have failed to compile had it been added to the union); (3) the `failFast === undefined` path is byte-for-byte the prior `Effect.retry(single, retrySchedule)`, and the `while: (err) => !failFast(err.cause)` polarity is correct (AND-composes with the schedule; a matched cause → no retry → attempt 1 → raw `PartUploadError`); (4) the partTimeout TestClock tests are deterministic (never-resolving Promise can only complete via the timeout sleep); (5) the `11.3-INT-001` flip is in place (no duplicate, `F#5` kept, arm (c) proves the budget is untouched) and `11.5-E2E-010` is re-tagged only (DD2). The reviewer also confirmed DD3 honesty: the existing `Schedule.whileInput` test really does demonstrate the equivalent capability, and shipping `failFast` as discoverable sugar is justified (not API bloat).
+
+### Findings & dispositions
+
+- **LOW-1** (`upload-stream.ts` decode ordering): `partTimeoutDuration` was decoded *before* the synchronous `chunkSize`/`resumeFrom` guards, so a malformed `partTimeout` could throw a `Duration` error ahead of the lib's documented synchronous throws. **Applied** — moved the `Duration.decode` below the pre-flight guards (with an explanatory comment). Zero behavioural change for valid inputs; preserves the documented throw-ordering. Triptyque re-verified green after the move.
+- **LOW-2** (TSDoc note that very small/zero `partTimeout` fires immediately): **Declined** — degenerate input with self-evident behaviour; the option's TSDoc is already thorough, and caveats for degenerate values add noise. (`receiving-code-review` skepticism: an advisory with no reachable defect.)
+- **LOW-3** (README discoverability for the two new options + the cause-only error): **Declined** — deliberate, consistent with 13.1/13.2 (keeps the change out of the separate doctest tier); the options are documented via accurate TSDoc visible in `.d.mts`/IDE. Kept as an optional flagged follow-up.
+
+**Dev decision:** applied LOW-1, declined LOW-2 + LOW-3. `receiving-code-review` skepticism applied in both directions — LOW-1 was a genuine (if tiny) correctness-of-contract improvement worth taking; LOW-2/LOW-3 were correctly identified by the reviewer as advisory and deferred. Triptyque re-verified green post-change (build 2/2, core 209/209, adapters 61/61, typecheck 5/5).
