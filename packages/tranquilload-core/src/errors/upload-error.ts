@@ -1,3 +1,5 @@
+import { Duration } from "effect"
+
 export class PartUploadError extends Error {
   readonly _tag = "PartUploadError" as const
 
@@ -101,6 +103,27 @@ export class ResumeMismatchError extends Error {
   ) {
     super(`Resume state mismatch: ${reason}`)
     this.name = "ResumeMismatchError"
+  }
+}
+
+/**
+ * Raised when a part's `uploadPart` attempt exceeds the opt-in `partTimeout`
+ * bound. **Cause-only:** this never appears directly in the `UploadError`
+ * channel — it is always carried as the `cause` of a `PartUploadError` (so a
+ * timed-out attempt feeds the existing `retrySchedule`) and, once the retry
+ * budget is exhausted, as the `cause` of a `MaxRetriesExceededError`. It is
+ * therefore deliberately NOT a member of the `UploadError` union; check it via
+ * `err.cause instanceof PartTimeoutError`.
+ */
+export class PartTimeoutError extends Error {
+  readonly _tag = "PartTimeoutError" as const
+
+  constructor(
+    readonly partNumber: number,
+    readonly timeout: Duration.Duration
+  ) {
+    super(`Part ${partNumber} timed out after ${Duration.toMillis(timeout)}ms`)
+    this.name = "PartTimeoutError"
   }
 }
 

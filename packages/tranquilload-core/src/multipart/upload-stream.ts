@@ -1,6 +1,6 @@
-import { Cause, Effect, Exit, Option, Ref, Schedule, Stream } from "effect"
+import { Cause, Duration, Effect, Exit, Option, Ref, Schedule, Stream } from "effect"
 import type { UploadError } from "../errors/upload-error.js"
-import { CircuitOpenError, CompleteUploadError, InitiateUploadError, MaxRetriesExceededError, PartUploadError, ReconcileError, ResumeMismatchError } from "../errors/upload-error.js"
+import { CircuitOpenError, CompleteUploadError, InitiateUploadError, MaxRetriesExceededError, PartTimeoutError, PartUploadError, ReconcileError, ResumeMismatchError } from "../errors/upload-error.js"
 import type { CircuitOpen, PartCompleted, ProgressTick, UploadCompleted, UploadEvent, UploadInitiated } from "../progress/upload-event.js"
 import { LoggerService, safeLog } from "../services/logger-service.js"
 import { fromAbortSignal } from "../utils/abort-interop.js"
@@ -147,6 +147,49 @@ export interface UploadMultipartOptions {
    * ```
    */
   readonly reinitOnStale?: (cause: unknown) => boolean
+  /**
+   * Opt-in per-attempt timeout. When set, **each** `uploadPart` attempt that
+   * does not resolve within this duration fails with a `PartUploadError` whose
+   * `cause` is a `PartTimeoutError` — which then feeds the existing
+   * `retrySchedule` exactly like any other transient part failure (a bounded
+   * slow-loris part is retried, and if every attempt times out it ultimately
+   * surfaces as `MaxRetriesExceededError` carrying the `PartTimeoutError`).
+   *
+   * The timeout bounds the **attempt**, not the whole part, so it composes with
+   * the retry budget. Default (`undefined`) preserves the current behaviour:
+   * **no hardcoded client-side timeout** — a slow part is never aborted by the
+   * lib.
+   *
+   * **Caveat (same as `signal`):** the timeout interrupts the orchestration
+   * fiber's wait, but it does NOT cancel the underlying in-flight request — a
+   * `fetch` you started inside `uploadPart` keeps running unless you also wire
+   * an `AbortSignal` into it. The timeout guarantees the upload fiber stops
+   * waiting; it does not guarantee the network call is torn down.
+   *
+   * Accepts any `Duration.DurationInput` (e.g. `"30 seconds"`, `5000`, a
+   * `Duration`).
+   */
+  readonly partTimeout?: Duration.DurationInput
+  /**
+   * Opt-in fail-fast policy. Receives the **raw** error thrown by `uploadPart`
+   * (the `cause` carried inside `PartUploadError`); return `true` to fail the
+   * part immediately on that attempt **without consuming the retry budget**.
+   * Default (`undefined`) preserves uniform retry per `retrySchedule`.
+   *
+   * Protocol-agnostic by design (symmetric with {@link reinitOnStale}): the core
+   * never names a specific error type — the caller classifies what is
+   * unrecoverable. It composes (AND) with `retrySchedule`: a part is retried
+   * only while the schedule recurs **and** `failFast` returns `false`, so you
+   * can add fail-fast to the **default** exponential schedule without rebuilding
+   * it. (The equivalent can also be encoded directly via
+   * `Schedule.whileInput` on `retrySchedule`; `failFast` is the ergonomic form.)
+   *
+   * @example
+   * ```ts
+   * failFast: (cause) => cause instanceof PresignedUrlError
+   * ```
+   */
+  readonly failFast?: (cause: unknown) => boolean
 }
 
 const DEFAULT_MAX_CONCURRENCY = 4
@@ -173,7 +216,12 @@ export const uploadMultipartEffect = (
     signal,
     retrySchedule = DEFAULT_RETRY_SCHEDULE,
     reinitOnStale,
+    partTimeout,
+    failFast,
   } = options
+
+  const partTimeoutDuration =
+    partTimeout !== undefined ? Duration.decode(partTimeout) : undefined
 
   if (!Number.isFinite(chunkSize) || chunkSize <= 0 || !Number.isInteger(chunkSize)) {
     throw new TypeError(
@@ -326,14 +374,42 @@ export const uploadMultipartEffect = (
           const single: Effect.Effect<string, PartUploadError> = Effect.gen(function* () {
             yield* Ref.update(refAttempts, n => n + 1)
             const attempt = yield* Ref.get(refAttempts)
-            return yield* normalizeCallback(() => uploadPart(partNumber, chunk)).pipe(
+            const attemptEffect = normalizeCallback(() => uploadPart(partNumber, chunk)).pipe(
               Effect.mapError(
                 (cause): PartUploadError => new PartUploadError(partNumber, attempt, cause)
               )
             )
+            // Opt-in per-attempt timeout: a timed-out attempt fails with a
+            // PartUploadError carrying a PartTimeoutError, so it feeds the
+            // retrySchedule exactly like any other transient part failure.
+            return yield* (partTimeoutDuration === undefined
+              ? attemptEffect
+              : attemptEffect.pipe(
+                  Effect.timeoutFail({
+                    duration: partTimeoutDuration,
+                    onTimeout: (): PartUploadError =>
+                      new PartUploadError(
+                        partNumber,
+                        attempt,
+                        new PartTimeoutError(partNumber, partTimeoutDuration)
+                      ),
+                  })
+                ))
           })
 
-          const etag = yield* Effect.retry(single, retrySchedule).pipe(
+          // Default (no failFast) keeps the exact current retry path. With
+          // failFast set, the part is retried only while the schedule recurs AND
+          // failFast(cause) is false — so a classified-unrecoverable cause fails
+          // immediately without consuming the retry budget.
+          const retried =
+            failFast === undefined
+              ? Effect.retry(single, retrySchedule)
+              : Effect.retry(single, {
+                  schedule: retrySchedule,
+                  while: (err: PartUploadError) => !failFast(err.cause),
+                })
+
+          const etag = yield* retried.pipe(
             Effect.catchAll(err =>
               Effect.gen(function* () {
                 const totalAttempts = yield* Ref.get(refAttempts)

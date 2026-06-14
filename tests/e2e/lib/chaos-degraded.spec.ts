@@ -98,18 +98,21 @@ for (const [engine, browserType] of ENGINES) {
       )
     })
 
-    test(`11.5-E2E-010 (C#15) [${engine}] — slow-loris part still completes (partTimeout is an Epic 13 candidate)`, async () => {
+    test(`11.5-E2E-010 (C#15) [${engine}] — slow-loris part still completes with no partTimeout (non-breaking default; partTimeout shipped opt-in in Story 13.4)`, async () => {
       test.slow()
       await runOnEngine(
         browserType,
         async ({ page, context }) => {
           // Slow-loris stand-in: part 1's transfer is trickled (here ~3s; a real
-          // slow-loris drags 30s+). The upload STILL completes — the lib does
-          // not abort a slow part. This is the documented current behaviour;
-          // bounding a pathologically slow part needs a `partTimeout` option
-          // (Epic 13 candidate). We cap the trickle at a few seconds to keep the
-          // nightly suite fast — the lock is "no hardcoded client timeout", not
-          // the exact trickle duration.
+          // slow-loris drags 30s+). With NO `partTimeout` the upload STILL
+          // completes — the lib does not abort a slow part. Story 13.4 shipped an
+          // opt-in `partTimeout` to bound a pathologically slow part; this E2E
+          // lock now guards the NON-BREAKING DEFAULT (no partTimeout → no
+          // hardcoded client timeout). The deterministic partTimeout behaviour is
+          // locked at the unit tier (upload-stream.test.ts 13.4-INT-001/002/003);
+          // here we keep the "no hardcoded client timeout" default lock. We cap
+          // the trickle at a few seconds to keep the nightly suite fast — the lock
+          // is the default behaviour, not the exact trickle duration.
           await installPutChaos(context, async ({ route, partNumber }) => {
             if (partNumber === 1) await sleep(3_000)
             await route.continue()

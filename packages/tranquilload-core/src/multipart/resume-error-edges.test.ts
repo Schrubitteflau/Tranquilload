@@ -27,18 +27,18 @@ const run = (options: Parameters<typeof uploadMultipartEffect>[0]) =>
 describe("Story 11.3 — resume + reconcile + error-mapping edges", () => {
   // --- 11.3-INT-001 (F#5) — PresignedUrlError inside uploadPart ------------
   // The adapter obtains its own presigned URL inside `uploadPart`. When that
-  // sign step throws a `PresignedUrlError`, the lib does NOT special-case it:
-  // it is wrapped exactly like any other `uploadPart` failure (→ PartUploadError
-  // on each attempt) and RETRIED uniformly per the schedule. This codifies the
-  // design-gap surfaced in brainstorming: there is no fail-fast on
-  // PresignedUrlError — a single-attempt schedule surfaces it as
-  // `PartUploadError.cause`, a multi-attempt schedule retries it and surfaces
-  // `MaxRetriesExceededError.cause`. Both preserve the original PresignedUrlError.
+  // sign step throws a `PresignedUrlError`, the lib does NOT special-case it by
+  // default: it is wrapped like any other `uploadPart` failure (→ PartUploadError
+  // on each attempt) and RETRIED uniformly per the schedule — arms (a)/(b),
+  // which lock the non-breaking DEFAULT.
   //
-  // Epic 13 candidate: an opt-in fail-fast policy for PresignedUrlError (today
-  // the caller must encode it via `Schedule.whileInput`, see the existing
-  // upload-stream.test.ts "Schedule.whileInput" test for the opt-out path).
-  it.effect("11.3-INT-001 (F#5) — PresignedUrlError in uploadPart wraps as PartUploadError.cause and is retried uniformly", () =>
+  // Story 13.4 adds an opt-in `failFast` predicate (arm (c)): the caller
+  // classifies a cause as unrecoverable and the part fails immediately on that
+  // attempt WITHOUT consuming the retry budget. `failFast` is ergonomic sugar
+  // over the equivalent `Schedule.whileInput` path (see the existing
+  // upload-stream.test.ts "Schedule.whileInput" test). The DEFAULT (no
+  // `failFast`) is unchanged — still uniform retry.
+  it.effect("11.3-INT-001 (F#5) — PresignedUrlError: retried uniformly by default; opt-in failFast skips the retry budget", () =>
     Effect.gen(function* () {
       const presigned = new PresignedUrlError(new Error("presigned URL expired"))
 
@@ -72,6 +72,24 @@ describe("Story 11.3 — resume + reconcile + error-mapping edges", () => {
       expect(retried).toBeInstanceOf(MaxRetriesExceededError)
       expect((retried as MaxRetriesExceededError).totalAttempts).toBe(3)
       expect((retried as MaxRetriesExceededError).cause).toBe(presigned)
+
+      // (c) OPT-IN failFast → fails immediately on the first attempt, the retry
+      // budget (recurs(2) = 3 total) is NOT consumed. Surfaces as PartUploadError
+      // (attempt 1, totalAttempts <= 1), cause preserved.
+      let failFastCalls = 0
+      const failFasted = yield* run({
+        stream: fromBytes(new Uint8Array(10).fill(1)),
+        chunkSize: 10,
+        uploadPart: () => { failFastCalls++; throw presigned },
+        completeUpload: () => {},
+        retrySchedule: Schedule.recurs(2), // budget of 3 — failFast skips it
+        failFast: (cause) => cause instanceof PresignedUrlError,
+      }).pipe(Effect.flip)
+
+      expect(failFastCalls).toBe(1) // fail-fast: retry budget untouched
+      expect(failFasted).toBeInstanceOf(PartUploadError)
+      expect((failFasted as PartUploadError).attempt).toBe(1)
+      expect((failFasted as PartUploadError).cause).toBe(presigned)
     })
   )
 

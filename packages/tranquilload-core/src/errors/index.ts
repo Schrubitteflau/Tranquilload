@@ -1,6 +1,7 @@
 export {
   PartUploadError,
   MaxRetriesExceededError,
+  PartTimeoutError,
   PresignedUrlError,
   InitiateUploadError,
   ReconcileError,

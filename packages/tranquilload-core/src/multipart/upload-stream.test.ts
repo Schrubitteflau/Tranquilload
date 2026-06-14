@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Cause, Effect, Fiber, Ref, Schedule, Stream, TestClock } from "effect"
-import { AbortError, CircuitOpenError, CompleteUploadError, MaxRetriesExceededError, PartUploadError, PresignedUrlError, ReconcileError, ResumeMismatchError } from "../errors/upload-error.js"
+import { AbortError, CircuitOpenError, CompleteUploadError, MaxRetriesExceededError, PartTimeoutError, PartUploadError, PresignedUrlError, ReconcileError, ResumeMismatchError } from "../errors/upload-error.js"
 import type { UploadEvent } from "../progress/upload-event.js"
 import { LoggerServiceLive } from "../services/logger-service.js"
 import { uploadMultipartEffect, type CompletedPart, type ResumeState } from "./upload-stream.js"
@@ -264,6 +264,74 @@ describe("uploadMultipartEffect", () => {
       // 1 attempt only → PartUploadError (not MaxRetriesExceededError — totalAttempts <= 1)
       expect(result).toBeInstanceOf(PartUploadError)
       expect((result as PartUploadError).cause).toBe(cause)
+    })
+  )
+
+  // --- Story 13.4 — opt-in partTimeout (C#15) -----------------------------
+  // A pathologically slow part (an attempt that never resolves) is bounded by
+  // `partTimeout`. The timed-out ATTEMPT fails with PartUploadError whose cause
+  // is a PartTimeoutError, so it feeds the existing retrySchedule like any
+  // transient failure. TestClock drives the timeout deterministically — no real
+  // waiting, no MinIO. (The companion E2E lock 11.5-E2E-010 guards the
+  // non-breaking DEFAULT: with no partTimeout a slow part still completes.)
+  it.effect("13.4-INT-001 (C#15) — partTimeout bounds a slow attempt: times out as PartUploadError(cause=PartTimeoutError), no retry", () =>
+    Effect.gen(function* () {
+      let calls = 0
+      const fiber = yield* Effect.fork(run({
+        stream: fromBytes(new Uint8Array(10).fill(1)),
+        chunkSize: 10,
+        partTimeout: "100 millis",
+        retrySchedule: Schedule.recurs(0), // single attempt, no retry
+        uploadPart: () => { calls++; return new Promise<string>(() => {}) }, // never resolves
+        completeUpload: () => {},
+      }).pipe(Effect.flip))
+
+      yield* TestClock.adjust("1 second") // past the 100ms attempt deadline
+      const result = yield* Fiber.join(fiber)
+
+      expect(calls).toBe(1)
+      expect(result).toBeInstanceOf(PartUploadError)
+      expect((result as PartUploadError).attempt).toBe(1)
+      expect((result as PartUploadError).partNumber).toBe(1)
+      expect((result as PartUploadError).cause).toBeInstanceOf(PartTimeoutError)
+      expect(((result as PartUploadError).cause as PartTimeoutError).partNumber).toBe(1)
+    })
+  )
+
+  it.effect("13.4-INT-002 (C#15) — partTimeout: repeated timeouts feed retrySchedule → MaxRetriesExceededError(cause=PartTimeoutError)", () =>
+    Effect.gen(function* () {
+      let calls = 0
+      const fiber = yield* Effect.fork(run({
+        stream: fromBytes(new Uint8Array(10).fill(1)),
+        chunkSize: 10,
+        partTimeout: "100 millis",
+        retrySchedule: Schedule.recurs(2), // 3 total attempts, no backoff delay
+        uploadPart: () => { calls++; return new Promise<string>(() => {}) }, // never resolves
+        completeUpload: () => {},
+      }).pipe(Effect.flip))
+
+      yield* TestClock.adjust("1 second") // covers 3 × 100ms sequential timeouts
+      const result = yield* Fiber.join(fiber)
+
+      expect(calls).toBe(3) // every attempt timed out and was retried per schedule
+      expect(result).toBeInstanceOf(MaxRetriesExceededError)
+      expect((result as MaxRetriesExceededError).totalAttempts).toBe(3)
+      expect((result as MaxRetriesExceededError).cause).toBeInstanceOf(PartTimeoutError)
+    })
+  )
+
+  it.effect("13.4-INT-003 (C#15) — partTimeout set but part completes within budget → no timeout, upload completes (non-breaking control)", () =>
+    Effect.gen(function* () {
+      const events = yield* run({
+        stream: fromBytes(new Uint8Array(10).fill(1)),
+        chunkSize: 10,
+        partTimeout: "10 seconds", // generous; the sync uploadPart wins the race
+        uploadPart: () => "etag-1",
+        completeUpload: () => {},
+      })
+
+      expect(events.some(e => e._tag === "UploadCompleted")).toBe(true)
+      expect(events.find(e => e._tag === "PartCompleted")).toMatchObject({ partNumber: 1, etag: "etag-1" })
     })
   )
 })
