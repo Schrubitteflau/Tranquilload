@@ -1,5 +1,18 @@
 # @tranquilload/adapters
 
+## 0.1.3
+
+### Patch Changes
+
+- 3b6ab28: Add an opt-in `resumeUploadId` option to `s3MultipartUpload` (Epic 13, Story 13.2). On a cross-session resume the consumer no longer calls `initiate`, which previously left the adapter's internal `storedUploadId` empty so `uploadPart` signed presigned URLs against `""`. Supplying `resumeUploadId` now seeds that value, so `getPresignedUrl(partNumber, uploadId)` receives the resumed `uploadId` without an `initiate` call. Default (no option) is unchanged — `storedUploadId` starts empty and is set only by `initiate`.
+- 3f9855d: Add S3 input-boundary guards (Epic 13, Story 13.1). `s3MultipartUpload` now rejects an S3 object key longer than 1024 bytes (UTF-8) pre-flight with `InitiateUploadError`, before any `createMultipartUpload` request. A new caller-side helper `assertS3PartCount(totalBytes, chunkSize)` (exported from `@tranquilload/adapters/optimalPartSize`, alongside `S3_MAX_PARTS`) throws a `RangeError` when an upload would exceed S3's 10,000-part maximum — the 10k cap is an S3 constraint, so it lives in the adapter layer rather than the protocol-agnostic core.
+- Updated dependencies [da82622]
+- Updated dependencies [bc6cb8c]
+- Updated dependencies [3f9855d]
+- Updated dependencies [bc6cb8c]
+- Updated dependencies [3b6ab28]
+  - @tranquilload/core@0.1.3
+
 ## 0.1.2
 
 ### Patch Changes
