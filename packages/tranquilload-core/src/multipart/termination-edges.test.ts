@@ -2,7 +2,7 @@ import { describe, expect } from "@effect/vitest"
 import { it as plainIt } from "vitest"
 import * as net from "node:net"
 import { Cause, Effect, Exit, Schedule, Stream } from "effect"
-import { PartUploadError } from "../errors/upload-error.js"
+import { CompleteUploadError, MaxRetriesExceededError, PartUploadError } from "../errors/upload-error.js"
 import { LoggerServiceLive } from "../services/logger-service.js"
 import { uploadMultipart } from "./index.js"
 import { uploadMultipartEffect } from "./upload-stream.js"
@@ -16,9 +16,10 @@ import { uploadMultipartEffect } from "./upload-stream.js"
  * `PartUploadError` within a tight wall-clock budget.
  *
  * INT-015 (F#87): tab-close simulation — vitest-level approximation of the
- * browser foot-gun. The lib has NO hook to auto-abort orphan multipart on
- * unhandled close — this lock captures the CURRENT behaviour. Epic 13
- * candidate flips this to auto-abort.
+ * browser foot-gun. Story 13.3 added the opt-in `abortUpload` teardown hook:
+ * supplying it makes the lib auto-invoke cleanup with the active `uploadId` on
+ * teardown (here, abort) so the orphan multipart can be aborted server-side.
+ * The DEFAULT (no `abortUpload`) still orphans — both arms are locked below.
  */
 
 const tinyStream = (bytes: number): ReadableStream<Uint8Array> =>
@@ -115,26 +116,28 @@ describe("Story 11.2 — termination edges (R-P2-2)", () => {
   )
 
   // ────────────────────────────────────────────────────────────────────────────
-  // 11.2-INT-015 (F#87) — Tab-close simulation: current behaviour is "orphan
-  // multipart on server"; Epic 13 candidate flips this to auto-abort
+  // 11.2-INT-015 (F#87) — Tab-close simulation: with the opt-in `abortUpload`
+  // hook (Story 13.3) the lib auto-invokes cleanup on teardown; without it, the
+  // multipart is orphaned (the non-breaking default — still locked here).
   //
   // Scope (Pattern 3): vitest is Node, not a browser — we cannot trigger
   // `window.beforeunload`. The closest approximation is "user starts upload,
   // never awaits, then aborts the in-flight signal but discards the handle".
-  // The lock here: the lib provides NO mechanism to auto-abort an orphan
-  // multipart when the consumer's tab closes — `initiate` fires once,
-  // `completeUpload` is never reached, and there is no callback the lib could
-  // call to notify the server.
+  // The lock here: `initiate` fires once, `completeUpload` is never reached, and
+  // the supplied `abortUpload` is invoked exactly once with the active uploadId
+  // so the consumer can notify the server.
   //
   // A genuine browser version of this lock belongs in `tests/e2e/ui/` (out of
   // scope for this story per Dev Notes).
   // ────────────────────────────────────────────────────────────────────────────
   plainIt(
-    "11.2-INT-015 (F#87) — tab-close approximation: initiate fires once, completeUpload never reached, no auto-abort hook (Epic 13 candidate)",
+    "11.2-INT-015 (F#87) — tab-close approximation: initiate fires once, completeUpload never reached; opt-in abortUpload fires once with the active uploadId",
     async () => {
       let initiateCalls = 0
       let completeCalls = 0
       let partsStarted = 0
+      let abortCalls = 0
+      let abortedId = ""
 
       // Gated callback (Pattern 1 from project_test_timing_boundary_patterns.md):
       // we PROVE initiate has fired before asserting, instead of relying on a
@@ -168,6 +171,10 @@ describe("Story 11.2 — termination edges (R-P2-2)", () => {
         completeUpload: () => {
           completeCalls += 1
         },
+        abortUpload: (id) => {
+          abortCalls += 1
+          abortedId = id
+        },
         signal: ctrl.signal,
         maxConcurrency: 1,
       })
@@ -191,17 +198,177 @@ describe("Story 11.2 — termination edges (R-P2-2)", () => {
       // fired if the upload had run to completion (5 parts × 80ms = 400ms).
       await realtimeSleep(150)
 
-      // Lock CURRENT behaviour:
-      //   - completeUpload was NEVER called → uploadId is orphaned server-side.
+      // Lock behaviour (Story 13.3):
+      //   - completeUpload was NEVER called → the upload did not finalise.
       //   - initiate fired exactly once → the resource was allocated.
-      //   - There is no callback the lib can use to auto-notify a /Abort to
-      //     S3 / MinIO on unhandled tab close (would need a beforeunload hook
-      //     wired by the lib — Epic 13 candidate).
+      //   - the opt-in `abortUpload` hook fired exactly once with the active
+      //     uploadId → the consumer can now notify a /Abort to S3 / MinIO on
+      //     teardown (the orphan-multipart gap is closed when the hook is wired;
+      //     the default — no hook — still orphans, per the other arms below).
       expect(
         completeCalls,
-        "completeUpload must NOT fire on tab-close — locks the current orphan-multipart behaviour (Epic 13 will auto-abort)",
+        "completeUpload must NOT fire on tab-close — the upload never finalised",
       ).toBe(0)
       expect(initiateCalls).toBe(1)
+      expect(
+        abortCalls,
+        "abortUpload must fire exactly once on teardown so the orphan can be cleaned up",
+      ).toBe(1)
+      expect(
+        abortedId,
+        "abortUpload must receive the active uploadId from initiate",
+      ).toBe("orphan-tab-close-test")
+    },
+  )
+})
+
+/**
+ * Story 13.3 — Abort & cleanup recovery (R-P2-3 + R-P2-9).
+ *
+ * The opt-in `abortUpload(uploadId)` teardown hook fires once when an upload is
+ * torn down AFTER initiate and BEFORE the complete phase (abort OR part-failure
+ * — DD1, phase-guarded not cause-guarded). It deliberately does NOT fire on a
+ * successful upload, during/after `/complete` (AC#2 guard — the multipart may
+ * have landed), or before any uploadId exists (phase 1). These surgical units
+ * lock all four phases deterministically — no MinIO, no TestClock.
+ */
+describe("Story 13.3 — abort & cleanup recovery (R-P2-3 + R-P2-9)", () => {
+  // 13.3-INT-001 (C#18) — happy path: a successful upload never triggers cleanup
+  // (the complete phase is entered → phase-3 guard skips the finalizer).
+  plainIt(
+    "13.3-INT-001 (C#18) — successful upload does NOT invoke abortUpload (no false-positive cleanup)",
+    async () => {
+      let abortCalls = 0
+      const handle = uploadMultipart({
+        stream: tinyStream(20), // 2 parts × 10 bytes
+        chunkSize: 10,
+        initiate: () => ({ uploadId: "happy-path" }),
+        uploadPart: (n) => `etag-${n}`,
+        completeUpload: () => {},
+        abortUpload: () => {
+          abortCalls += 1
+        },
+        maxConcurrency: 1,
+      })
+
+      const result = await handle.result
+      expect(result._tag).toBe("UploadCompleted")
+      expect(result.totalParts).toBe(2)
+      expect(
+        abortCalls,
+        "abortUpload must NOT fire on a successful upload",
+      ).toBe(0)
+    },
+  )
+
+  // 13.3-INT-002 (C#20) — complete-phase guard: an abort/failure DURING /complete
+  // must NOT auto-abort the multipart (it may have landed server-side). Recovery
+  // is via resumeState (documented contract), not a destructive auto-delete.
+  plainIt(
+    "13.3-INT-002 (C#20) — failure during /complete does NOT invoke abortUpload (phase-3 guard)",
+    async () => {
+      let abortCalls = 0
+      const handle = uploadMultipart({
+        stream: tinyStream(20),
+        chunkSize: 10,
+        initiate: () => ({ uploadId: "complete-abort" }),
+        uploadPart: (n) => `etag-${n}`,
+        // Simulate an abort landing during the final commit: completeUpload throws.
+        completeUpload: () => {
+          throw new Error("aborted during complete")
+        },
+        abortUpload: () => {
+          abortCalls += 1
+        },
+        maxConcurrency: 1,
+      })
+
+      let caught: unknown
+      try {
+        await handle.result
+      } catch (err) {
+        caught = err
+      }
+      expect(caught).toBeInstanceOf(CompleteUploadError)
+      expect(
+        abortCalls,
+        "abortUpload must NOT fire once the complete phase is entered — the multipart may have landed",
+      ).toBe(0)
+    },
+  )
+
+  // 13.3-INT-003 (C#18, DD1) — any-teardown: a part exhausting its retry budget
+  // (no abort signal) ALSO leaves an orphan, so the cleanup fires.
+  plainIt(
+    "13.3-INT-003 (C#18) — part-failure teardown invokes abortUpload with the uploadId (any teardown, not just abort)",
+    async () => {
+      let abortCalls = 0
+      let abortedId = ""
+      const handle = uploadMultipart({
+        stream: tinyStream(20),
+        chunkSize: 10,
+        initiate: () => ({ uploadId: "part-failure" }),
+        uploadPart: () => {
+          throw new Error("part always fails")
+        },
+        completeUpload: () => {},
+        abortUpload: (id) => {
+          abortCalls += 1
+          abortedId = id
+        },
+        // recurs(1) → 2 total attempts → MaxRetriesExceededError (deterministic,
+        // no delay → no TestClock needed).
+        retrySchedule: Schedule.recurs(1),
+        maxConcurrency: 1,
+      })
+
+      let caught: unknown
+      try {
+        await handle.result
+      } catch (err) {
+        caught = err
+      }
+      expect(caught).toBeInstanceOf(MaxRetriesExceededError)
+      expect(
+        abortCalls,
+        "abortUpload must fire on a part-failure teardown (orphan left behind)",
+      ).toBe(1)
+      expect(abortedId).toBe("part-failure")
+    },
+  )
+
+  // 13.3-INT-004 (C#18) — phase-1 guard: with no initiate, no uploadId is ever
+  // created, so there is nothing to clean up even when a part fails.
+  plainIt(
+    "13.3-INT-004 (C#18) — pre-initiate teardown does NOT invoke abortUpload (no uploadId to abort)",
+    async () => {
+      let abortCalls = 0
+      const handle = uploadMultipart({
+        stream: tinyStream(10), // 1 part
+        chunkSize: 10,
+        // No `initiate` → refUploadId stays "".
+        uploadPart: () => {
+          throw new Error("part fails, no uploadId exists")
+        },
+        completeUpload: () => {},
+        abortUpload: () => {
+          abortCalls += 1
+        },
+        retrySchedule: Schedule.recurs(0), // single attempt → PartUploadError
+        maxConcurrency: 1,
+      })
+
+      let caught: unknown
+      try {
+        await handle.result
+      } catch (err) {
+        caught = err
+      }
+      expect(caught).toBeInstanceOf(PartUploadError)
+      expect(
+        abortCalls,
+        "abortUpload must NOT fire when no uploadId was ever created (phase 1)",
+      ).toBe(0)
     },
   )
 })

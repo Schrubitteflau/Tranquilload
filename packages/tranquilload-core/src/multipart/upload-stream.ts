@@ -190,6 +190,60 @@ export interface UploadMultipartOptions {
    * ```
    */
   readonly failFast?: (cause: unknown) => boolean
+  /**
+   * Opt-in **best-effort teardown cleanup**. When the upload is torn down
+   * **after** `initiate` has produced a `uploadId` but **before** the complete
+   * phase is entered — i.e. an abort fires mid-part, or a part exhausts its
+   * retry budget — the lib invokes `abortUpload(uploadId)` **exactly once** so
+   * you can clean up the server-side multipart (e.g. S3 `AbortMultipartUpload`).
+   * Without this callback (default), the current behaviour is preserved: the
+   * multipart is **orphaned** server-side on teardown.
+   *
+   * **Fires on any teardown after initiate and before complete** — both an
+   * `AbortSignal` abort and a part-failure (`MaxRetriesExceededError`) leave an
+   * orphan, and the same cleanup applies. The decision is **phase-based**, never
+   * by inspecting the failure cause — keeping the core protocol-agnostic
+   * (symmetric with {@link reinitOnStale} / {@link failFast}).
+   *
+   * **Does NOT fire** in two cases, by design:
+   * - **Pre-initiate teardown** (no `uploadId` was ever created) — there is
+   *   nothing to abort.
+   * - **During / after `/complete`** — once the complete phase begins the
+   *   multipart may already have landed server-side, so auto-aborting it could
+   *   destroy a successful upload. See the late-stage recovery contract below.
+   *
+   * **Late-stage `/complete`-abort recovery contract.** If an abort lands while
+   * `completeUpload` is in flight, `abortUpload` is deliberately NOT called and
+   * the upload fails with `AbortError`/`CompleteUploadError`. The deterministic
+   * recovery state is your already-resolved `resumeState` (the `uploadId` + the
+   * completed parts): either **retry `completeUpload`** (S3
+   * `CompleteMultipartUpload` is effectively idempotent for the same part set)
+   * or **reconcile-probe first** (ListParts / HEAD the target) to decide whether
+   * the commit landed before retrying or aborting.
+   *
+   * **Errors are swallowed (best-effort).** If your `abortUpload` itself fails,
+   * that error is ignored so it cannot mask the real upload error that triggered
+   * teardown (the `AbortError`/`PartUploadError` is what you need to see).
+   *
+   * **Tab-close caveat (same shape as `signal`).** On a *graceful* abort/failure
+   * the lib runs `abortUpload` via an Effect finalizer. On a *true* browser
+   * tab-close the JS context is gone and no async cleanup can run — for that case
+   * wire `abortUpload` to `navigator.sendBeacon(...)` or
+   * `fetch(..., { keepalive: true })` in your own `beforeunload` handler. The lib
+   * gives you the hook; it cannot resurrect a dead context.
+   *
+   * @example
+   * ```ts
+   * abortUpload: (uploadId) =>
+   *   fetch("/api/multipart/abort", {
+   *     method: "POST",
+   *     body: JSON.stringify({ uploadId }),
+   *   }).then(() => {})
+   * ```
+   */
+  readonly abortUpload?: (
+    uploadId: string
+  ) => void | Promise<void> | Effect.Effect<void, UploadError>
 }
 
 const DEFAULT_MAX_CONCURRENCY = 4
@@ -218,6 +272,7 @@ export const uploadMultipartEffect = (
     reinitOnStale,
     partTimeout,
     failFast,
+    abortUpload,
   } = options
 
   if (!Number.isFinite(chunkSize) || chunkSize <= 0 || !Number.isInteger(chunkSize)) {
@@ -261,6 +316,11 @@ export const uploadMultipartEffect = (
       const refParts = yield* Ref.make<CompletedPart[]>([])
       const refBytesUploaded = yield* Ref.make(0)
       const refUploadId = yield* Ref.make("")
+      // Phase-3 boundary for the opt-in teardown finalizer: set true at the top
+      // of `finalEffect`, before `completeUpload` runs, so an abort/failure
+      // during (or after) `/complete` does NOT auto-abort a possibly-landed
+      // multipart. See `abortUpload` TSDoc + the 3-phase teardown model.
+      const refCompleting = yield* Ref.make(false)
       const refDigest = yield* Ref.make<Option.Option<string>>(Option.none())
       const breaker = options.circuitBreaker
         ? yield* makeCircuitBreaker(options.circuitBreaker)
@@ -507,6 +567,10 @@ export const uploadMultipartEffect = (
 
       const finalEffect: Effect.Effect<UploadEvent, UploadError, never> = Effect.gen(
         function* () {
+          // Enter the complete phase: from here the teardown finalizer must NOT
+          // auto-abort (the multipart may land server-side). Set BEFORE reading
+          // parts / calling completeUpload.
+          yield* Ref.set(refCompleting, true)
           const uploadId = yield* Ref.get(refUploadId)
           const parts = yield* Ref.get(refParts)
           yield* normalizeCallback(() => completeUpload(uploadId, parts)).pipe(
@@ -524,7 +588,33 @@ export const uploadMultipartEffect = (
         }
       )
 
-      return Stream.concat(setupStream, partsStream.pipe(Stream.concat(Stream.fromEffect(finalEffect))))
+      const body = Stream.concat(
+        setupStream,
+        partsStream.pipe(Stream.concat(Stream.fromEffect(finalEffect)))
+      )
+
+      // Opt-in best-effort teardown cleanup. The finalizer runs on success,
+      // failure, AND interruption (uninterruptibly). It invokes `abortUpload`
+      // only in PHASE 2 — initiated (`uploadId` set) AND complete phase not yet
+      // entered — so a successful upload (phase 3), a `/complete`-phase teardown
+      // (phase 3), and a pre-initiate teardown (phase 1) all correctly skip it.
+      // Errors are ignored (best-effort) so cleanup cannot mask the real error.
+      // Default (no `abortUpload`) keeps the returned stream byte-for-byte
+      // unchanged — no finalizer is attached.
+      if (abortUpload === undefined) {
+        return body
+      }
+
+      const abortCleanup: Effect.Effect<void, never> = Effect.gen(function* () {
+        const uploadId = yield* Ref.get(refUploadId)
+        const completing = yield* Ref.get(refCompleting)
+        if (uploadId !== "" && !completing) {
+          yield* normalizeCallback(() => abortUpload(uploadId)).pipe(Effect.ignore)
+          yield* safeLog(logger, "info", `Abort cleanup invoked for upload ${uploadId}`)
+        }
+      })
+
+      return body.pipe(Stream.ensuring(abortCleanup))
     })
   )
 }

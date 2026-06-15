@@ -6,9 +6,12 @@ import { driveMultipartInPage, installApiDelay } from "@support/helpers/lib-mult
  * Story 11.5 — Abort-timing chaos cluster (C#18, C#19, C#20).
  *
  * R-P2-3 — teardown semantics when an abort fires in each multipart phase.
- * These lock the DOCUMENTED current behaviour; two of the three surface Epic 13
- * candidates (orphan-multipart cleanup on initiate-abort; clean late-stage
- * recovery on complete-abort).
+ * These lock the DOCUMENTED current (default) behaviour. Story 13.3 shipped the
+ * opt-in `abortUpload` teardown hook + the documented late-stage `/complete`
+ * recovery contract — the deterministic callback behaviour is locked at the unit
+ * tier (`termination-edges.test.ts`: 11.2-INT-015 + 13.3-INT-001..004), so these
+ * specs are RE-TAGGED (not flipped) and now guard the NON-BREAKING DEFAULT (no
+ * `abortUpload` → the orphan/late-state behaviour below is unchanged).
  *
  * MEMORY: AbortSignal must be wired into user callbacks — the driver threads the
  * signal into every fetch, so an abort interrupts the in-flight request AND the
@@ -21,7 +24,7 @@ const uniq = (tag: string, engine: string) => `chaos-${tag}-${engine}-${Date.now
 
 for (const [engine, browserType] of ENGINES) {
   test.describe(`R-P2-3 abort-timing chaos [${engine}] (PW-Lib)`, () => {
-    test(`11.5-E2E-011 (C#18) [${engine}] — abort during /initiate aborts cleanly (orphan-multipart gap documented)`, async () => {
+    test(`11.5-E2E-011 (C#18) [${engine}] — abort during /initiate aborts cleanly (default: orphan possible; abortUpload hook is opt-in, Story 13.3)`, async () => {
       await runOnEngine(
         browserType,
         async ({ page, context }) => {
@@ -45,10 +48,12 @@ for (const [engine, browserType] of ENGINES) {
           // No part ever started; nothing completed.
           expect(result.completedParts).toBe(0)
           expect(result.partAttempts).toEqual({})
-          // Epic 13 candidate: if the request reached the server before the abort,
-          // MinIO may hold an ORPHAN multipart (the lib does not auto-abort it on
-          // initiate-abort). Documented gap — not asserted here because creation
-          // is timing-dependent (the route holds the request client-side).
+          // Non-breaking default: if the request reached the server before the
+          // abort, MinIO may hold an ORPHAN multipart (with no `abortUpload`, the
+          // lib does not auto-abort it on initiate-abort). Story 13.3's opt-in
+          // `abortUpload` hook is the cleanup path; not asserted here because
+          // orphan creation is timing-dependent (the route holds the request
+          // client-side). Hook behaviour is locked at the unit tier.
         },
         engine,
       )
@@ -83,14 +88,14 @@ for (const [engine, browserType] of ENGINES) {
           // …and the upload never completed.
           expect(result.events).not.toContain("UploadCompleted")
           // The orphan multipart (1 part on MinIO, never completed) is the
-          // documented current behaviour; auto-abort on tab close is an Epic 13
-          // candidate (F#87).
+          // non-breaking default; the opt-in `abortUpload` teardown hook (shipped
+          // Story 13.3, F#87) is the cleanup path — locked at the unit tier.
         },
         engine,
       )
     })
 
-    test(`11.5-E2E-013 (C#20) [${engine}] — abort during /complete: no clean late-stage recovery (Epic 13 candidate)`, async () => {
+    test(`11.5-E2E-013 (C#20) [${engine}] — abort during /complete: deterministic late-state surface (recovery contract documented in Story 13.3)`, async () => {
       test.slow()
       await runOnEngine(
         browserType,
@@ -113,8 +118,12 @@ for (const [engine, browserType] of ENGINES) {
           // unrecoverable late state with NO clean recovery API.
           expect(["AbortError", "CompleteUploadError"]).toContain(result.error?._tag)
           expect(result.events).not.toContain("UploadCompleted")
-          // Epic 13 candidate: a late-stage `/complete` abort has no recovery
-          // path — the caller cannot resume or cleanly finalise (C#20).
+          // Story 13.3 documented the late-stage recovery contract: on a
+          // `/complete` abort the lib deliberately does NOT auto-abort (the
+          // multipart may have landed); recover via resumeState (uploadId +
+          // parts) by retrying completeUpload or reconcile-probing. The guard
+          // (no auto-abort during /complete) is locked at the unit tier
+          // (13.3-INT-002). This spec guards the non-breaking error surface.
         },
         engine,
       )
