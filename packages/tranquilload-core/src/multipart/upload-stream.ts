@@ -212,6 +212,18 @@ export interface UploadMultipartOptions {
    *   multipart may already have landed server-side, so auto-aborting it could
    *   destroy a successful upload. See the late-stage recovery contract below.
    *
+   * **Resume interaction (important).** A resumed upload's `uploadId` (from
+   * `resumeFrom`) is live, so a teardown during a *resumed* upload's part phase
+   * also fires `abortUpload(uploadId)` — with the resumed (or, after a
+   * `reinitOnStale` re-initiate, the freshly re-created) `uploadId`, i.e. always
+   * the most-recent live id. The callback does **not** receive the failure
+   * cause, so it cannot distinguish a user abort from a transient part-failure.
+   * If you both resume across sessions **and** wire `abortUpload`, note that a
+   * part-failure will clean up the resumable multipart (discarding parts from
+   * earlier sessions). If you want to preserve cross-session progress through
+   * failures, gate cleanup externally (e.g. only abort on an explicit user
+   * cancel) rather than wiring `abortUpload` unconditionally.
+   *
    * **Late-stage `/complete`-abort recovery contract.** If an abort lands while
    * `completeUpload` is in flight, `abortUpload` is deliberately NOT called and
    * the upload fails with `AbortError`/`CompleteUploadError`. The deterministic

@@ -371,4 +371,52 @@ describe("Story 13.3 — abort & cleanup recovery (R-P2-3 + R-P2-9)", () => {
       ).toBe(0)
     },
   )
+
+  // 13.3-INT-005 (C#18) — resume-path teardown: a resumed upload's uploadId is
+  // live (set by resumeFrom, not initiate), so a teardown during its part phase
+  // fires abortUpload with the RESUMED uploadId. Documented interaction: with
+  // both `resumeFrom` and `abortUpload` wired, a part-failure cleans up the
+  // resumable multipart — abortUpload does not receive the cause, so it cannot
+  // distinguish a user abort from a transient failure. (See abortUpload TSDoc.)
+  plainIt(
+    "13.3-INT-005 (C#18) — resume-path part-failure invokes abortUpload with the resumed uploadId",
+    async () => {
+      let abortCalls = 0
+      let abortedId = ""
+      const handle = uploadMultipart({
+        stream: tinyStream(10), // 1 part
+        chunkSize: 10,
+        // Resume: uploadId comes from resumeFrom, NOT initiate.
+        resumeFrom: {
+          version: 1,
+          uploadId: "resumed-id",
+          chunkSize: 10,
+          contentDigestCaptured: false,
+        },
+        uploadPart: () => {
+          throw new Error("resumed part fails")
+        },
+        completeUpload: () => {},
+        abortUpload: (id) => {
+          abortCalls += 1
+          abortedId = id
+        },
+        retrySchedule: Schedule.recurs(0),
+        maxConcurrency: 1,
+      })
+
+      let caught: unknown
+      try {
+        await handle.result
+      } catch (err) {
+        caught = err
+      }
+      expect(caught).toBeInstanceOf(PartUploadError)
+      expect(
+        abortCalls,
+        "abortUpload fires on a resumed upload's teardown (the resumed uploadId is live)",
+      ).toBe(1)
+      expect(abortedId).toBe("resumed-id")
+    },
+  )
 })
