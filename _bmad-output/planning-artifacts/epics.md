@@ -1049,25 +1049,37 @@ So that a slow-loris part cannot hang an upload indefinitely and an unrecoverabl
 
 **Coverage:** flips 11.5-E2E-010, 11.3-INT-001. Both additive opt-in options; defaults unchanged (non-breaking). Touches core `upload-stream.ts` part execution + retry. **Quick-win tier.** Risk clusters R-P2-6 + R-P2-9.
 
-### Story 13.5: Observability & Integrity
+### Story 13.5: Observability — Event-Stream Flush-Before-Error
 
 As a library maintainer,
-I want the event stream to flush buffered `UploadEvent`s before surfacing a failure/abort, and an optional ingest checksum to catch a corrupting `CompressionService`,
-So that abort/failure observability is not lost (events currently read empty on the failure path) and a buggy compressor's corrupt output is surfaced before the upload "succeeds".
+I want the public `events` stream to flush buffered `UploadEvent`s before surfacing a failure/abort,
+So that abort/failure observability is not lost (events currently read empty on the failure path).
 
-**⚠️ API-validation / design spike required before dev:** the event-stream flush is a real Effect/Stream limitation (the `Stream<UploadEvent>` errors WITHOUT flushing buffered events — worked around throughout Epic 11 with callback-side counters). The spike must determine how to flush-then-fail in Effect's Stream model (emit terminal events before failing the stream, or split the events channel from the result channel) WITHOUT masking the typed error. The ingest-checksum placement (a pipeline checksum transform vs a core option) must be validated against the `(stream) => stream` pipeline contract.
+**✅ Spike resolved 2026-06-20 (Project Lead, via API-validation pass). SHIPPED (done).** The epic-level 13.5 bundled TWO halves — (1) event-stream flush + (2) optional ingest checksum. The spike found the root cause of the flush gap (both `multipart/index.ts` and `oneshot/index.ts` build `events` from an all-or-nothing `Stream.runCollect` that discards buffered events on a failed Exit → the stream closes empty), and that the checksum half carries a **genuine semantics fork** (a digest of the uploaded bytes cannot detect a buggy compressor — it faithfully matches the corrupt output). **Decision: ship the flush half only here; carve the ingest checksum into Story 13.5b** with its own design pass. Design chosen: split the events channel from the result channel — enqueue each event **live** via `Stream.tap` into a controller-backed `ReadableStream`, keep the typed `UploadError` on `result` only (never masked). Locked at the **unit tier** (net-new `13.5-INT-001/002`); the Story 11.5 E2E callback-counter workaround is re-tagged, not flipped (DD1).
 
 **Acceptance Criteria:**
 
-**Given** an upload that fails or is aborted mid-flight
+**Given** an upload that fails or is aborted mid-flight (after ≥1 event emitted)
 **When** the consumer reads the `events` stream
-**Then** all `UploadEvent`s emitted before the failure are observable (flushed) before the stream surfaces the typed error — instead of reading empty. Removes the callback-side-counter workaround documented across Story 11.5.
+**Then** all `UploadEvent`s emitted before the failure are observable (flushed) before the stream closes — instead of reading empty — while the typed `UploadError` still surfaces only via `result` (never masked on the events channel). With a successful upload the events stream is unchanged. Locked by net-new `13.5-INT-001` (part-failure) + `13.5-INT-002` (abort); the Story 11.5 events-empty workaround is re-tagged.
 
-**Given** an optional ingest checksum is enabled and a `CompressionService` emits bytes unrelated to its input
-**When** the upload runs
-**Then** the corruption is surfaced as a typed error before `completeUpload` — instead of the current "upload completes with corrupt bytes (no-checksum trust boundary)". Default (no checksum) preserves the zero-overhead trust boundary. Flips locking test 11.2-INT-005 (F#70).
+**Coverage:** locks the flush at the unit tier; re-tags (does not flip) the Story 11.5 events-empty E2E workaround + applies symmetrically (behaviour-preserving) to `uploadOnce`. Touches core events/Stream orchestration. **Spike resolved.** Risk cluster R-P2-3. Story file: `13-5-observability-and-integrity.md`.
 
-**Coverage:** flips the Story 11.5 events-empty workaround + 11.2-INT-005. Touches core events/Stream orchestration + pipeline. **Spike-gated.** Risk clusters R-P2-3 + R-P2-5.
+### Story 13.5b: Ingest Integrity Checksum (DEFERRED — SPIKE)
+
+As a library maintainer,
+I want an optional ingest checksum to surface a corrupting upload pipeline before `completeUpload`,
+So that a buggy `CompressionService` (or wire corruption) is caught instead of silently producing a corrupt object.
+
+**⚠️ Design spike required — semantics fork (carved out of 13.5 on 2026-06-20).** F#70's literal framing ("catch a corrupting `CompressionService`") is **not honestly achievable by a generic checksum**: a digest of the uploaded bytes faithfully matches whatever (corrupt) bytes the compressor produced — it cannot tell the compressor mangled its input. The spike must choose the real semantics: **(a) per-part transport-integrity checksum** (lib computes a digest over each uploaded chunk, exposes it on `PartCompleted` / to the callbacks so the user forwards it as a `Content-MD5` / `x-amz-checksum-*` header and the SERVER rejects wire corruption — protocol-aligned, real-world win, but reframes F#70 from "no checksum" to "optional transport checksum"; does NOT detect a buggy compressor), or **(b) caller-supplied expected post-pipeline digest** (lib fails with a typed error before `completeUpload` if the actual digest differs — literally flips F#70 in-unit, but niche), or **(c) both**. Validate placement against the `(stream) => stream` pipeline contract + keep it opt-in (default = zero-overhead trust boundary preserved).
+
+**Acceptance Criteria (provisional — pending spike):**
+
+**Given** the chosen opt-in checksum is enabled
+**When** the upload runs and the post-pipeline bytes are corrupt (per the chosen semantics)
+**Then** the corruption is surfaced (typed error before `completeUpload`, or a server-verifiable per-part checksum) — instead of the current "upload completes with corrupt bytes". Default (no checksum) preserves the zero-overhead trust boundary. Flips locking test 11.2-INT-005 (F#70).
+
+**Coverage:** flips 11.2-INT-005 (F#70, currently a green trust-boundary lock re-tagged to point here). Touches core pipeline + events. **Spike-gated (semantics fork).** Risk cluster R-P2-5.
 
 ### Story 13.6: simpleHttpUpload HTTP/1.1 Streaming Transmission
 
@@ -1091,4 +1103,4 @@ So that the documented cross-browser transmission gap (streamed PUT works only o
 
 ---
 
-**Total Epic 13 scope:** 6 stories flipping ~13 discrete locking tests (plus the 11.5 events-empty cross-cutting workaround and the 11.7 S3-resume gap) from "documents the gap" to "validates the fix". 1 candidate (F#42 10k-part) is realized as a caller-side/S3-adapter helper per the protocol-agnostic-core rule. **Quick-win tier:** 13.1, 13.2, 13.4 (flip-the-lock). **Spike-gated:** 13.3, 13.5, 13.6 (API-validation/design pass precedes implementation). Every new option is opt-in — no default behaviour changes. Epic 12 (circuit-breaker, R-P2-11) tracked separately.
+**Total Epic 13 scope:** stories flipping ~13 discrete locking tests (plus the 11.5 events-empty cross-cutting workaround and the 11.7 S3-resume gap) from "documents the gap" to "validates the fix". 1 candidate (F#42 10k-part) is realized as a caller-side/S3-adapter helper per the protocol-agnostic-core rule. **Quick-win tier:** 13.1, 13.2, 13.4 (flip-the-lock). **Spike-gated:** 13.3, 13.5, 13.6 (API-validation/design pass precedes implementation). **Status (2026-06-20):** 13.1/13.2/13.3/13.4 done + released; **13.5 done** (flush half — its ingest-checksum half was carved into **Story 13.5b**, a new spike pending the semantics fork). Remaining: 13.5b + spike-gated 13.6 + deferred 13.7 (reconciled-part integrity). Every new option is opt-in — no default behaviour changes. Epic 12 (circuit-breaker, R-P2-11) tracked separately.

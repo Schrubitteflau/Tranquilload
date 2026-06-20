@@ -18,6 +18,41 @@ export const uploadOnce = (
   events: ReadableStream<UploadEvent>
   result: Promise<UploadResult>
 } => {
+  // events: a live ReadableStream fed incrementally as each UploadEvent is
+  // produced (Story 13.5 — flush-before-error; symmetric with `uploadMultipart`
+  // so the two public wrappers don't diverge). One-shot emits only its terminal
+  // `UploadCompleted`, so there is never a pre-failure event to flush here — the
+  // change is behaviour-preserving for one-shot (a failed/aborted upload still
+  // closes the stream cleanly with zero events). The typed UploadError surfaces
+  // via `result` only; enqueue/close are guarded against consumer cancel.
+  let eventsController: ReadableStreamDefaultController<UploadEvent> | undefined
+  let eventsClosed = false
+  const events = new ReadableStream<UploadEvent>({
+    start(controller) {
+      eventsController = controller
+    },
+    cancel() {
+      eventsClosed = true
+    },
+  })
+  const enqueueEvent = (event: UploadEvent): void => {
+    if (eventsClosed) return
+    try {
+      eventsController?.enqueue(event)
+    } catch {
+      eventsClosed = true
+    }
+  }
+  const closeEvents = (): void => {
+    if (eventsClosed) return
+    eventsClosed = true
+    try {
+      eventsController?.close()
+    } catch {
+      // Already closed/cancelled — ignore.
+    }
+  }
+
   const collected: Promise<ReadonlyArray<UploadEvent>> = (async () => {
     let processedStream = options.stream
     if (options.pipeline !== undefined) {
@@ -35,6 +70,8 @@ export const uploadOnce = (
     }
 
     const program = uploadOnceEffect({ ...options, stream: processedStream }).pipe(
+      // Flush each event into the public `events` stream live (Story 13.5).
+      Stream.tap((event) => Effect.sync(() => enqueueEvent(event))),
       Stream.provideLayer(LoggerServiceLive)
     )
 
@@ -42,23 +79,11 @@ export const uploadOnce = (
       Effect.map((chunk) => Array.from(chunk)),
       Effect.runPromiseExit
     )
+    // Close the live events stream cleanly regardless of success/failure.
+    closeEvents()
     if (Exit.isSuccess(exit)) return exit.value
     return Promise.reject(Cause.squash(exit.cause))
   })()
-
-  // events: ReadableStream built from collected array; closes cleanly on error
-  const events = new ReadableStream<UploadEvent>({
-    async start(controller) {
-      try {
-        const evts = await collected
-        for (const event of evts) controller.enqueue(event)
-        controller.close()
-      } catch (_) {
-        // Close cleanly — abort/upload errors surface via `result` only
-        controller.close()
-      }
-    },
-  })
 
   // result: resolves with UploadCompleted, rejects with UploadError on failure
   const result: Promise<UploadResult> = collected.then((evts) => {

@@ -67,12 +67,14 @@ for (const [engine, browserType] of ENGINES) {
           // 3 parts, sequential. Abort fires the instant part 1's uploadPart
           // callback returns its ETag — i.e. BETWEEN part 1 and part 2.
           //
-          // We trigger the abort from the CALLBACK, not the event stream: the
-          // lib's event ReadableStream batches at completion and is torn down on
-          // abort (MEMORY: "log batches events at completion"), so a drain-based
-          // trigger never fires mid-upload and `events`/`completedParts` read
-          // empty on the abort path. `partsCompletedViaCallback` is the reliable
-          // partial-progress signal.
+          // We trigger the abort from the CALLBACK, not the event stream. Story
+          // 13.5 made the events stream flush-before-error, so `events` /
+          // `completedParts` are now populated on the abort path too — but
+          // `partsCompletedViaCallback` remains the primary mid-upload trigger
+          // and partial-progress signal here (callback timing is the most
+          // robust cross-engine signal; the deterministic flush itself is locked
+          // at the unit tier by core `13.5-INT-001/002`, not re-asserted across
+          // these 3-engine chaos specs — same tier-correctness call as 13.4 DD2).
           const result = await page.evaluate(driveMultipartInPage, {
             filename: uniq("c19", engine),
             totalBytes: 11 * MiB,

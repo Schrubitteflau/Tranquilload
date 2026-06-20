@@ -68,7 +68,12 @@ describe("uploadOnce — Dual API entry point", () => {
         signal: controller.signal,
       })
 
-      // events closes cleanly — no error thrown to stream consumer
+      // events closes cleanly — no error thrown to stream consumer. Story 13.5
+      // made the events stream flush live, but one-shot emits only its terminal
+      // UploadCompleted (no pre-failure events), so on the abort path there is
+      // nothing to flush: 0 events, closed cleanly. The flush is behaviour-
+      // preserving for one-shot (DD3) — the multipart flip is locked by
+      // 13.5-INT-001/002.
       const evts = yield* Effect.promise(() => readAllEvents(events))
       expect(evts).toHaveLength(0)
 

@@ -94,6 +94,48 @@ export const uploadMultipart = (
     resolveResumeState(options.resumeFrom)
   }
 
+  // events: a live ReadableStream fed incrementally as each UploadEvent is
+  // produced (Story 13.5 — flush-before-error). Previously this stream was
+  // built by awaiting the fully-collected event array, so on the failure /
+  // abort path that array REJECTED and the stream closed EMPTY — every event
+  // emitted before the failure was lost. We now enqueue each event live (via a
+  // Stream.tap in the program below) and close the stream cleanly on settle, so
+  // events emitted before a failure remain observable. The typed UploadError is
+  // NOT surfaced on this channel — it still rejects `result` only (the events
+  // channel is split from the result channel, so the error is never masked).
+  // enqueue/close are guarded so a consumer that cancels the reader cannot
+  // crash the upload fiber.
+  let eventsController: ReadableStreamDefaultController<UploadEvent> | undefined
+  let eventsClosed = false
+  const events = new ReadableStream<UploadEvent>({
+    start(controller) {
+      eventsController = controller
+    },
+    cancel() {
+      // Consumer cancelled the reader — stop enqueuing; the upload continues and
+      // its outcome still surfaces via `result`.
+      eventsClosed = true
+    },
+  })
+  const enqueueEvent = (event: UploadEvent): void => {
+    if (eventsClosed) return
+    try {
+      eventsController?.enqueue(event)
+    } catch {
+      // Stream already closed/cancelled by the consumer — stop enqueuing.
+      eventsClosed = true
+    }
+  }
+  const closeEvents = (): void => {
+    if (eventsClosed) return
+    eventsClosed = true
+    try {
+      eventsController?.close()
+    } catch {
+      // Already closed/cancelled — ignore.
+    }
+  }
+
   const collected: Promise<ReadonlyArray<UploadEvent>> = (async () => {
     // Step 1: resolve pipeline to get the processed stream
     let processedStream = options.stream
@@ -114,6 +156,10 @@ export const uploadMultipart = (
 
     // Step 2: run upload with processedStream
     const program = uploadMultipartEffect({ ...options, stream: processedStream }).pipe(
+      // Flush each event into the public `events` stream live, before any
+      // downstream failure can discard it (Story 13.5). Runs ahead of the
+      // uploadId/progress side-effect tap below — neither depends on the other.
+      Stream.tap((event) => Effect.sync(() => enqueueEvent(event))),
       Stream.tap((event) => {
         if (event._tag === "UploadInitiated") {
           // Fresh-init branch: resolve uploadId on the event, and build the
@@ -150,6 +196,10 @@ export const uploadMultipart = (
       Effect.map((chunk) => Array.from(chunk)),
       Effect.runPromiseExit
     )
+    // Close the live events stream cleanly regardless of success/failure — every
+    // event emitted before this point has already been enqueued (flushed). The
+    // failure, if any, surfaces only via `result` below.
+    closeEvents()
     if (Exit.isSuccess(exit)) return exit.value
     return Promise.reject(Cause.squash(exit.cause))
   })()
@@ -168,20 +218,6 @@ export const uploadMultipart = (
       }
     })
     .finally(() => resolveUploadId(""))
-
-  // events: ReadableStream built from collected array; closes cleanly on error
-  const events = new ReadableStream<UploadEvent>({
-    async start(controller) {
-      try {
-        const evts = await collected
-        for (const event of evts) controller.enqueue(event)
-        controller.close()
-      } catch (_) {
-        // Close cleanly — upload errors surface via `result` only
-        controller.close()
-      }
-    },
-  })
 
   // result: resolves with UploadCompleted, rejects with UploadError on failure
   const result: Promise<UploadResult> = collected.then((evts) => {

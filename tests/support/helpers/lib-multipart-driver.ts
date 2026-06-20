@@ -71,12 +71,17 @@ export interface DriveResult {
   readonly error: SerializedUploadError | null
   /** `_tag` of every UploadEvent, in emission order. */
   readonly events: string[]
-  /** Count of PartCompleted events drained (unreliable on the abort path — the
-   * lib's event ReadableStream batches at completion and errors on abort; use
-   * `partsCompletedViaCallback` for abort assertions). */
+  /** Count of PartCompleted events drained from the live `events` stream.
+   * Story 13.5 made the events stream flush-before-error, so events emitted
+   * before a failure/abort are now observable here too (it no longer closes
+   * empty on the abort path). `partsCompletedViaCallback` is RETAINED as the
+   * primary abort signal — defense-in-depth, and the deterministic flush is
+   * locked at the unit tier (core `13.5-INT-001/002`) rather than re-asserted
+   * across these nightly 3-engine chaos specs. */
   readonly completedParts: number
-  /** Parts whose `uploadPart` callback returned an ETag — reliable proof of
-   * partial progress even when the event stream is torn down by an abort. */
+  /** Parts whose `uploadPart` callback returned an ETag — direct proof of
+   * partial progress, independent of the event stream (the primary abort-path
+   * progress signal; see `completedParts` re: the Story 13.5 flush). */
   readonly partsCompletedViaCallback: number
   /** partNumber → number of times `uploadPart` was invoked (proves retries). */
   readonly partAttempts: Record<string, number>

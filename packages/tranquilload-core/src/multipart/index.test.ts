@@ -1,9 +1,10 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Cause, Effect, Exit, Option } from "effect"
+import { Cause, Effect, Exit, Option, Schedule } from "effect"
 import { afterEach, vi } from "vitest"
-import { AbortError, CompleteUploadError, InitiateUploadError } from "../errors/upload-error.js"
+import { AbortError, CompleteUploadError, InitiateUploadError, PartUploadError } from "../errors/upload-error.js"
 import { compress } from "../pipeline/compress.js"
 import { compose, type Transform } from "../pipeline/middleware.js"
+import type { PartCompleted } from "../progress/upload-event.js"
 import { uploadMultipart, type ResumeState } from "./index.js"
 import { uploadMultipartEffect } from "./upload-stream.js"
 
@@ -120,10 +121,109 @@ describe("uploadMultipart — Dual API entry point", () => {
         expect((err as AbortError)._tag).toBe("AbortError")
       }
 
-      // events ReadableStream closes cleanly (no throw)
+      // events ReadableStream closes cleanly (no throw). After Story 13.5 the
+      // events stream FLUSHES everything emitted before the failure; in THIS
+      // scenario the abort preempts all emission (no `initiate` → no
+      // UploadInitiated, and `uploadPart` never resolves → no PartCompleted), so
+      // 0 events is still correct here and the stream just closes cleanly. The
+      // flush itself is proven by 13.5-INT-001/002 below (≥1 event lands first).
       const evts = yield* Effect.promise(() => readAllEvents(events))
-      // Stream should close without throwing — length may be 0 (aborted before any parts complete)
       expect(Array.isArray(evts)).toBe(true)
+      // No terminal UploadCompleted on the abort path.
+      expect(evts.find((e) => e._tag === "UploadCompleted")).toBeUndefined()
+    })
+  )
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // 13.5-INT-001 / 002 — Story 13.5 (Observability: event-stream flush-before-
+  // error). BEFORE 13.5 the public `events` stream was built by awaiting the
+  // fully-collected event array, so on the failure/abort path that array
+  // rejected and the stream closed EMPTY — every event emitted before the
+  // failure was lost (the "events read empty on the failure path" gap worked
+  // around with callback-side counters across Story 11.5). AFTER 13.5 events are
+  // enqueued live, so events emitted before the failure remain observable, while
+  // the typed UploadError still surfaces only via `result` (channels split — the
+  // error is never masked on the events channel). Locked at the UNIT tier here;
+  // the Story 11.5 E2E callback-counter workaround is RE-TAGGED, not flipped
+  // (E2E/MinIO is the wrong tier for a deterministic stream behaviour — same
+  // tier-correctness call as Story 13.4 DD2).
+  // ──────────────────────────────────────────────────────────────────────────
+  it.effect("13.5-INT-001 — events emitted before a part-failure are flushed (not lost); result still rejects with the typed error", () =>
+    Effect.gen(function* () {
+      const boom = new Error("part 2 boom")
+      const { result, events } = uploadMultipart({
+        stream: fromBytes(new Uint8Array(20).fill(1)),
+        chunkSize: 10, // → 2 parts
+        maxConcurrency: 1, // serialize: part 1 fully completes (+ ProgressTick) before part 2 runs
+        retrySchedule: Schedule.recurs(0), // 1 attempt → part 2 fails immediately (no retry wait)
+        initiate: () => ({ uploadId: "u-flush" }), // emits UploadInitiated
+        uploadPart: (n) => {
+          if (n === 1) return "etag-1"
+          return Promise.reject(boom)
+        },
+        completeUpload: () => {},
+      })
+
+      // result rejects with the typed PartUploadError — the error is NOT masked
+      // by moving events to a live channel.
+      const resultExit = yield* Effect.exit(
+        Effect.tryPromise({ try: () => result, catch: (e) => e })
+      )
+      expect(Exit.isFailure(resultExit)).toBe(true)
+      if (Exit.isFailure(resultExit)) {
+        const errOption = Cause.failureOption(resultExit.cause)
+        expect(errOption._tag).toBe("Some")
+        const err = (errOption as { _tag: "Some"; value: unknown }).value
+        expect(err).toBeInstanceOf(PartUploadError)
+        expect((err as PartUploadError).partNumber).toBe(2)
+      }
+
+      // The events stream FLUSHED the pre-failure events (was EMPTY pre-13.5).
+      const evts = yield* Effect.promise(() => readAllEvents(events))
+      expect(evts.length).toBeGreaterThan(0)
+      expect(evts.find((e) => e._tag === "UploadInitiated")).toBeDefined()
+      const partEvents = evts.filter((e) => e._tag === "PartCompleted")
+      expect(partEvents).toHaveLength(1)
+      expect((partEvents[0] as PartCompleted).partNumber).toBe(1)
+      // No terminal UploadCompleted — the upload failed before /complete.
+      expect(evts.find((e) => e._tag === "UploadCompleted")).toBeUndefined()
+    })
+  )
+
+  it.effect("13.5-INT-002 — events emitted before a mid-flight abort are flushed (not lost); result still rejects with AbortError", () =>
+    Effect.gen(function* () {
+      const controller = new AbortController()
+      const { result, events } = uploadMultipart({
+        stream: fromBytes(new Uint8Array(20).fill(1)),
+        chunkSize: 10, // → 2 parts
+        maxConcurrency: 1, // part 1 completes before part 2 starts
+        initiate: () => ({ uploadId: "u-abort" }),
+        uploadPart: (n) => {
+          if (n === 1) return "etag-1"
+          // part 2: trip the abort, then never resolve so raceFirst picks the abort.
+          controller.abort()
+          return new Promise<string>(() => {})
+        },
+        completeUpload: () => {},
+        signal: controller.signal,
+      })
+
+      const resultExit = yield* Effect.exit(
+        Effect.tryPromise({ try: () => result, catch: (e) => e })
+      )
+      expect(Exit.isFailure(resultExit)).toBe(true)
+      if (Exit.isFailure(resultExit)) {
+        const errOption = Cause.failureOption(resultExit.cause)
+        expect(errOption._tag).toBe("Some")
+        expect((errOption as { _tag: "Some"; value: unknown }).value).toBeInstanceOf(AbortError)
+      }
+
+      const evts = yield* Effect.promise(() => readAllEvents(events))
+      expect(evts.find((e) => e._tag === "UploadInitiated")).toBeDefined()
+      const partEvents = evts.filter((e) => e._tag === "PartCompleted")
+      expect(partEvents).toHaveLength(1)
+      expect((partEvents[0] as PartCompleted).partNumber).toBe(1)
+      expect(evts.find((e) => e._tag === "UploadCompleted")).toBeUndefined()
     })
   )
 
