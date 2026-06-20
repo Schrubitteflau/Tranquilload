@@ -45,6 +45,17 @@ export interface ResumeState {
 export interface UploadMultipartOptions {
   readonly stream: ReadableStream<Uint8Array>
   readonly chunkSize: number
+  /**
+   * Uploads one part and returns its ETag. The `chunk` is the exact
+   * post-pipeline byte slice about to be sent.
+   *
+   * **No-checksum trust boundary.** The core does not checksum the bytes your
+   * pipeline produces (a digest of the uploaded bytes cannot detect a buggy
+   * compressor — it matches the corrupt output). If you want the *server* to
+   * reject wire corruption, checksum `chunk` here and forward a server-verified
+   * header (e.g. S3's trailing `x-amz-checksum-sha256`). See the "Ingest
+   * integrity" section of the README.
+   */
   readonly uploadPart: (
     partNumber: number,
     chunk: Uint8Array

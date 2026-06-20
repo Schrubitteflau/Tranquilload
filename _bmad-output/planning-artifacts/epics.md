@@ -1065,21 +1065,21 @@ So that abort/failure observability is not lost (events currently read empty on 
 
 **Coverage:** locks the flush at the unit tier; re-tags (does not flip) the Story 11.5 events-empty E2E workaround + applies symmetrically (behaviour-preserving) to `uploadOnce`. Touches core events/Stream orchestration. **Spike resolved.** Risk cluster R-P2-3. Story file: `13-5-observability-and-integrity.md`.
 
-### Story 13.5b: Ingest Integrity Checksum (DEFERRED — SPIKE)
+### Story 13.5b: Ingest Integrity Checksum (SPIKE RESOLVED — decline/document-only)
 
 As a library maintainer,
 I want an optional ingest checksum to surface a corrupting upload pipeline before `completeUpload`,
 So that a buggy `CompressionService` (or wire corruption) is caught instead of silently producing a corrupt object.
 
-**⚠️ Design spike required — semantics fork (carved out of 13.5 on 2026-06-20).** F#70's literal framing ("catch a corrupting `CompressionService`") is **not honestly achievable by a generic checksum**: a digest of the uploaded bytes faithfully matches whatever (corrupt) bytes the compressor produced — it cannot tell the compressor mangled its input. The spike must choose the real semantics: **(a) per-part transport-integrity checksum** (lib computes a digest over each uploaded chunk, exposes it on `PartCompleted` / to the callbacks so the user forwards it as a `Content-MD5` / `x-amz-checksum-*` header and the SERVER rejects wire corruption — protocol-aligned, real-world win, but reframes F#70 from "no checksum" to "optional transport checksum"; does NOT detect a buggy compressor), or **(b) caller-supplied expected post-pipeline digest** (lib fails with a typed error before `completeUpload` if the actual digest differs — literally flips F#70 in-unit, but niche), or **(c) both**. Validate placement against the `(stream) => stream` pipeline contract + keep it opt-in (default = zero-overhead trust boundary preserved).
+**✅ Spike resolved 2026-06-20 (Project Lead, via design pass + AskUserQuestion → decline/document-only). NO library code.** The design pass confirmed F#70's literal promise ("a checksum catches a buggy compressor") is **not honestly deliverable by any generic checksum**, and found that the only real-world win is **already achievable caller-side**:
 
-**Acceptance Criteria (provisional — pending spike):**
+- **(a) per-part transport-integrity checksum** — the win (the SERVER rejects wire corruption via `x-amz-checksum-sha256`) needs no library API: `uploadPart(partNumber, chunk)` already hands the caller the exact post-pipeline bytes, so they can `crypto.subtle.digest("SHA-256", chunk)` and forward the header themselves. The lib could only offer thin sugar; does NOT detect a buggy compressor.
+- **(b) caller-supplied expected post-pipeline digest** — has **no oracle on a first upload** (the expected digest *is* the pipeline's output, unknown before the pipeline runs); only detects divergence between a recorded prior run and a re-run (niche regression check), with cross-platform streaming-hash friction (Web Crypto `subtle.digest` is one-shot, no MD5).
+- `getContentDigest` is orthogonal (a resume-identity key called before bytes flow — "MUST NOT consume bytes"), not reusable for integrity.
 
-**Given** the chosen opt-in checksum is enabled
-**When** the upload runs and the post-pipeline bytes are corrupt (per the chosen semantics)
-**Then** the corruption is surfaced (typed error before `completeUpload`, or a server-verifiable per-part checksum) — instead of the current "upload completes with corrupt bytes". Default (no checksum) preserves the zero-overhead trust boundary. Flips locking test 11.2-INT-005 (F#70).
+**Decision (Option 1): ship NO new API.** Document the DIY path instead — README "Ingest integrity (the no-checksum trust boundary)" subsection + a TSDoc note on `uploadPart`. F#70 / `11.2-INT-005` stays a GREEN trust-boundary lock — **13.5b does NOT flip it** (comment updated to record the resolution). Heuristics applied: (ii) capability already exists → don't add a knob; (v) don't ship a dishonest lock for an undeliverable AC.
 
-**Coverage:** flips 11.2-INT-005 (F#70, currently a green trust-boundary lock re-tagged to point here). Touches core pipeline + events. **Spike-gated (semantics fork).** Risk cluster R-P2-5.
+**Outcome:** doc-only (README + TSDoc), no behaviour change, no new surface, no crypto dependency. Risk cluster R-P2-5 closed (documented trust boundary + DIY remedy).
 
 ### Story 13.6: simpleHttpUpload HTTP/1.1 Streaming Transmission
 
@@ -1103,4 +1103,4 @@ So that the documented cross-browser transmission gap (streamed PUT works only o
 
 ---
 
-**Total Epic 13 scope:** stories flipping ~13 discrete locking tests (plus the 11.5 events-empty cross-cutting workaround and the 11.7 S3-resume gap) from "documents the gap" to "validates the fix". 1 candidate (F#42 10k-part) is realized as a caller-side/S3-adapter helper per the protocol-agnostic-core rule. **Quick-win tier:** 13.1, 13.2, 13.4 (flip-the-lock). **Spike-gated:** 13.3, 13.5, 13.6 (API-validation/design pass precedes implementation). **Status (2026-06-20):** 13.1/13.2/13.3/13.4 done + released; **13.5 done** (flush half — its ingest-checksum half was carved into **Story 13.5b**, a new spike pending the semantics fork). Remaining: 13.5b + spike-gated 13.6 + deferred 13.7 (reconciled-part integrity). Every new option is opt-in — no default behaviour changes. Epic 12 (circuit-breaker, R-P2-11) tracked separately.
+**Total Epic 13 scope:** stories flipping ~13 discrete locking tests (plus the 11.5 events-empty cross-cutting workaround and the 11.7 S3-resume gap) from "documents the gap" to "validates the fix". 1 candidate (F#42 10k-part) is realized as a caller-side/S3-adapter helper per the protocol-agnostic-core rule. **Quick-win tier:** 13.1, 13.2, 13.4 (flip-the-lock). **Spike-gated:** 13.3, 13.5, 13.6 (API-validation/design pass precedes implementation). **Status (2026-06-20):** 13.1/13.2/13.3/13.4 done + released; **13.5 done** (flush half); **13.5b resolved** (ingest-checksum spike → decline/document-only, doc-only, no library code — the transport-checksum win is already caller-achievable via the `chunk` handed to `uploadPart`; F#70 stays a green trust-boundary lock, not flipped). Remaining: spike-gated 13.6 + deferred 13.7 (reconciled-part integrity). Every new option is opt-in — no default behaviour changes. Epic 12 (circuit-breaker, R-P2-11) tracked separately.

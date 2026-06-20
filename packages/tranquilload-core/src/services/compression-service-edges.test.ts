@@ -155,14 +155,18 @@ describe("Story 11.2 — CompressionService edges (R-P2-8)", () => {
   // is corrupt. This is intentional (the lib has no content checksum on the
   // ingest side); we lock it as a foot-gun for future readers.
   //
-  // Story 13.5 scope decision (2026-06-20, Project Lead): Story 13.5 shipped the
-  // event-stream flush-before-error half only; the optional ingest checksum was
-  // carved out to a follow-up Story 13.5b with its own design pass (the checksum
-  // SEMANTICS are a genuine fork — a digest of the uploaded bytes cannot detect
-  // a buggy compressor, it faithfully matches the corrupt output; the achievable
-  // designs are transport-integrity-for-server-verification vs caller-supplied
-  // expected-digest). This trust-boundary lock therefore stays GREEN until 13.5b
-  // lands; 13.5b is the story that will flip it.
+  // Story 13.5b spike RESOLVED (2026-06-20, Project Lead, decline/document-only):
+  // Story 13.5 shipped the event-stream flush-before-error half; the optional
+  // ingest checksum was carved to Story 13.5b, whose design pass found F#70's
+  // literal promise ("a checksum catches a buggy compressor") is NOT honestly
+  // deliverable by any generic checksum — a digest of the uploaded bytes
+  // faithfully matches the corrupt output, and a caller-supplied expected digest
+  // has no oracle on a first upload. The per-part transport-checksum win
+  // (server rejects WIRE corruption via x-amz-checksum-sha256) is ALREADY
+  // achievable caller-side: `uploadPart(_, chunk)` hands the user the exact
+  // post-pipeline bytes. Decision: ship NO new API; document the DIY path
+  // (README "Ingest integrity" + uploadPart TSDoc). This trust-boundary lock
+  // therefore stays GREEN permanently — 13.5b does NOT flip it.
   // ────────────────────────────────────────────────────────────────────────────
   it.effect(
     "11.2-INT-005 (F#70) — malformed CompressionService output → upload completes with corrupt bytes (no-checksum trust boundary)",

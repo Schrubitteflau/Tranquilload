@@ -300,6 +300,53 @@ silent-corruption class:
 > uploaded parts only works if your pipeline is byte-deterministic. Verify
 > before relying on this.
 
+<a id="ingestintegrity"></a>
+
+### Ingest integrity (the no-checksum trust boundary)
+
+The core deliberately does **not** checksum the bytes your pipeline produces. It
+trusts your `CompressionService` and your source stream and uploads whatever
+bytes come out — a zero-overhead trust boundary. The consequence: a buggy
+compressor (or any in-pipeline corruption) silently produces a corrupt object.
+
+A digest *of the uploaded bytes* cannot catch this on its own — it faithfully
+matches whatever (corrupt) bytes the pipeline emitted. So the library does not
+ship a built-in "did my compressor misbehave?" check; that would be a false
+sense of safety. What you can verify, with no extra library API, is the **wire**
+(client → storage): every `uploadPart(partNumber, chunk)` hands you the exact
+bytes about to be sent, so you can checksum `chunk` and forward a
+server-verified header (e.g. S3's trailing `x-amz-checksum-sha256`). The server
+then rejects any corruption introduced between your client and storage:
+
+```ts
+import { uploadMultipart } from "@tranquilload/core/multipart";
+
+const { result } = uploadMultipart({
+  stream,
+  chunkSize: 8 * 1024 * 1024,
+  initiate,
+  completeUpload,
+  // You receive the exact post-pipeline bytes for each part — checksum them and
+  // let the server verify wire integrity via a trailing checksum header.
+  uploadPart: async (partNumber, chunk) => {
+    const digest = await crypto.subtle.digest("SHA-256", chunk);
+    const checksum = btoa(String.fromCharCode(...new Uint8Array(digest)));
+    const res = await fetch(presign(partNumber), {
+      method: "PUT",
+      headers: { "x-amz-checksum-sha256": checksum },
+      body: chunk,
+    });
+    return res.headers.get("etag")!;
+  },
+});
+```
+
+This guards the wire, **not** a buggy pipeline: a checksum computed over the
+post-pipeline bytes (client- or server-side) cannot tell that the compressor
+mangled its input. If you need to detect that class of bug, compare a digest of
+the *source* bytes you fed in against a digest of the *decompressed* result, out
+of band — it is not something a streaming uploader can decide for you.
+
 <a id="httpstreaming"></a>
 
 ### `simpleHttpUpload` streaming vs buffered
