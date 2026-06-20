@@ -1,5 +1,12 @@
 # @tranquilload/core
 
+## 0.1.5
+
+### Patch Changes
+
+- f7a1407: Event-stream flush-before-error: `uploadMultipart().events` (and `uploadOnce().events`) now flush every `UploadEvent` emitted before a failure or abort, instead of closing empty on the failure path. Events are enqueued live as they are produced; the typed `UploadError` still surfaces only via `result` (the events channel is split from the result channel, so the error is never masked). Observability on the failure path is no longer lost. Non-breaking: the success path is unchanged, and a failed/aborted upload still rejects `result` with the same typed error. (Story 13.5 — Observability. The optional ingest checksum half was carved out to a follow-up story.)
+- 2655f1a: Document the ingest no-checksum trust boundary. The core deliberately does not checksum the bytes your pipeline produces — a digest of the uploaded bytes faithfully matches whatever a buggy compressor emitted, so it cannot detect that the compressor mangled its input. A new README section ("Ingest integrity") and a TSDoc note on `uploadPart` explain this and show the DIY path to server-verified **wire** integrity: every `uploadPart(partNumber, chunk)` hands you the exact post-pipeline bytes, so you can checksum `chunk` and forward a trailing checksum header (e.g. S3 `x-amz-checksum-sha256`) — no new library API required. Docs-only, no behaviour change. (Story 13.5b — Ingest Integrity Checksum; spike resolved to decline/document-only.)
+
 ## 0.1.4
 
 ### Patch Changes
