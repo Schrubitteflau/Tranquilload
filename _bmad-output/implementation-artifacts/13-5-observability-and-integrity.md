@@ -145,4 +145,18 @@ claude-opus-4-8 (Opus 4.8) — dev per the permanent Epics 6–9 rule (Opus for 
 
 ## Senior Developer Review (AI)
 
-_Pending — independent fresh-context Opus `code-reviewer` agent._
+**Reviewer:** independent Opus 4.8 `code-reviewer` agent (fresh context — Codex unavailable; another Opus stands in per user direction).
+**Date:** 2026-06-20
+**Outcome:** ✅ **Approve** — 0 HIGH / 0 MEDIUM / 3 LOW (all declined; doc/process only).
+
+### Verdict
+
+Clean, minimal, correctly-split fix. The reviewer traced all 7 load-bearing invariants statically rather than rubber-stamping, and every one held: (1) the typed `UploadError` is never masked — `result` rejects via `Promise.reject(Cause.squash(exit.cause))` while the events channel only ever `enqueue`/`close`s (never `controller.error(...)`), and `closeEvents()` runs before the reject branch and cannot throw into it; (2) consumer-cancel is safe — `enqueueEvent`/`closeEvents` guard on `eventsClosed` + try/catch and the `cancel()` handler sets the flag, so no `enqueue`/`close` can throw out of the (synchronous, total) `Effect.sync` tap; (3) `start` runs synchronously during `new ReadableStream(...)` (WHATWG spec) — strictly before the `collected` IIFE's first tap, so `eventsController` is never `undefined` at first enqueue (also empirically confirmed by the passing `13.5-INT-001/002`); (4) `uploadOnce` is genuinely behaviour-preserving — `Stream.fromEffect(program)` emits exactly one terminal `UploadCompleted`, so the flush is a true no-op and the reframed `toHaveLength(0)` lock stays correct; (5) `maxConcurrency: 1` + `Schedule.recurs(0)` make `13.5-INT-001/002` deterministic (part 1's `PartCompleted` flushes before part 2's `PartUploadError(partNumber: 2)`; `totalAttempts <= 1` keeps it a raw `PartUploadError`, not `MaxRetriesExceededError`) and genuinely red pre-change; (6) the E2E re-tags break no assertion. The reviewer surfaced one assertion my own grep missed — `chaos-abort-timing.spec.ts:49` `result.completedParts).toBe(0)` (`11.5-E2E-011`) — and I independently confirmed it: that spec aborts `{ when: "duringInitiate" }`, so no part runs and `0` holds regardless of the flush; `11.5-E2E-012` asserts `partsCompletedViaCallback` (not `completedParts`). All `result.events` assertions are `toContain`/`not.toContain("UploadCompleted")` — robust to a now-populated array.
+
+### Findings & dispositions
+
+- **LOW-1** (un-drained-reader buffer): the live `events` controller has no queuing-strategy/`pull` handler, so a consumer that holds `events` but never reads it retains the per-event queue (~2 events/part) until settle. **Declined (no code change)** — it is NOT a regression (`runCollect` already buffers the identical array for `result` over the same lifetime, bounded by S3's 10k-part cap) and the project keeps internal-behaviour fixes out of the public-doc surface (consistent with 13.1/13.2/13.4). The reviewer itself rated it "Acceptable as-is / no code change required to merge." Optional discoverability follow-up — flagged, not done.
+- **LOW-2** (the green-suite was asserted by the story, not re-run by the reviewer): **Addressed** — the dev independently ran the full triptyque twice (build 2/2, core 216/216, adapters 61/61, typecheck 5/5) + the forced `@tranquilload/tests` typecheck (3/3). CI is the formal gate at release time (CI-native release flow). No code change.
+- **LOW-3** (`enqueueEvent` silently absorbs an unexpected `enqueue` throw): **Declined** — the reviewer confirms the silence is intentional (symmetry with consumer-cancel; the failure surfaces via `result` regardless). No change.
+
+**Dev decision:** all 3 LOWs declined/addressed with rationale — `receiving-code-review` skepticism applied in both directions (each is a genuine observation but none is a reachable defect or a regression). Triptyque remains green (unchanged since no code edit followed the review).
