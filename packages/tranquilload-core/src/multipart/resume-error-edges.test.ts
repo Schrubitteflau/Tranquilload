@@ -245,14 +245,21 @@ describe("Story 11.3 — resume + reconcile + error-mapping edges", () => {
   // part between ListParts and complete, so completeUpload rejects with
   // `InvalidPart`. The divergence is NOT detected mid-flight: it surfaces only
   // at the complete phase, mapped to `CompleteUploadError` (phase-accurate).
-  // STILL A LOCK — DEFERRED from Story 13.2 (DD3): "detect/re-upload a GC'd
-  // reconciled part" is NOT a quick-win flip. Two tensions block it — (1) the
-  // reconciled chunk is discarded after the skip and the source stream is
-  // drained by the complete phase, so re-upload needs unbounded opt-in
-  // retention (memory-safety, cf. 13.6); (2) the protocol-agnostic core can't
-  // tell which part S3's `InvalidPart` refers to without parsing S3 error
-  // strings. Moved to a follow-up spike (Story 13.7 or fold into 13.5). This
-  // test stays GREEN, locking the current CompleteUploadError-at-complete.
+  // STILL A LOCK — Story 13.7 (spike) RESOLVED → decline/document-only
+  // (Project Lead, 2026-06-22, via design pass + AskUserQuestion). The
+  // literal "detect/re-upload a GC'd reconciled part" AC is not honestly
+  // deliverable: (1) the protocol-agnostic core can't tell which part S3's
+  // `InvalidPart` refers to without parsing S3 error strings; (2) the
+  // reconciled chunk is discarded after the skip and the source is drained by
+  // the complete phase, so an in-band re-upload needs unbounded retention
+  // (defeats resume) — bounded retention only covers a GC'd part in the
+  // retained window, not the general case. The recovery capability already
+  // exists caller-side (verify-before-skip in `reconcileCompletedParts`, or
+  // catch `CompleteUploadError` → re-probe → re-invoke with a fresh source).
+  // So 13.7 ships NO library code; it documents the trust boundary + remedies
+  // (README "Reconciled-part integrity" + `reconcileCompletedParts` TSDoc).
+  // This test stays GREEN — NOT flipped — locking the current
+  // CompleteUploadError-at-complete behaviour as the documented boundary.
   it.effect("11.3-INT-005 (F#14) — stale reconciled part surfaces as CompleteUploadError at complete phase", () =>
     Effect.gen(function* () {
       const invalidPart = Object.assign(

@@ -68,6 +68,26 @@ export interface UploadMultipartOptions {
     | { uploadId: string }
     | Promise<{ uploadId: string }>
     | Effect.Effect<{ uploadId: string }, UploadError>
+  /**
+   * On resume, returns the parts already uploaded so the lib can skip
+   * re-uploading them.
+   *
+   * **Stale-reconcile trust boundary.** The lib *trusts* this answer: each
+   * reported part's etag is forwarded straight to `completeUpload` without
+   * re-checking the part still exists. If the backend garbage-collects a part
+   * **between** this probe and the final `completeUpload` (e.g. an S3 lifecycle
+   * rule expiring incomplete-multipart parts), the commit rejects and the upload
+   * fails with `CompleteUploadError` at the complete phase. The core does **not**
+   * auto-detect and re-upload the missing part — it cannot identify which part is
+   * gone without parsing protocol-specific error strings, and the skipped bytes
+   * are already discarded (the source is drained by the complete phase). Close
+   * the window by only reporting parts you have *confirmed* still exist, or
+   * recover by catching `CompleteUploadError` and re-invoking with a fresh
+   * source stream (the re-probed reconcile re-uploads the missing part). See the
+   * "Reconciled-part integrity" section of the README. (A fully GC'd *upload* —
+   * `NoSuchUpload` on the reconcile itself — is the separate {@link reinitOnStale}
+   * case.)
+   */
   readonly reconcileCompletedParts?: () =>
     | ReadonlyArray<CompletedPart>
     | Promise<ReadonlyArray<CompletedPart>>

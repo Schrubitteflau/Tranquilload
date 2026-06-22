@@ -300,6 +300,82 @@ silent-corruption class:
 > uploaded parts only works if your pipeline is byte-deterministic. Verify
 > before relying on this.
 
+<a id="reconciledpartintegrity"></a>
+
+### Reconciled-part integrity (the stale-reconcile trust boundary)
+
+On resume, `reconcileCompletedParts` tells the lib which parts already exist so
+it can skip re-uploading them. The lib **trusts that answer** — it forwards each
+reported part's etag straight to `completeUpload` without re-checking that the
+part still exists. That trust has an edge: if the storage backend
+garbage-collects a part **between** your reconcile probe and the final
+`completeUpload` (e.g. an S3 lifecycle rule that expires incomplete-multipart
+parts), the commit is rejected and the upload fails with `CompleteUploadError`
+at the complete phase.
+
+The library does **not** auto-detect and re-upload the missing part, by design —
+and it cannot do so honestly. The complete-phase error does not structurally name
+*which* part is gone (parsing it would tie the protocol-agnostic core to S3 error
+strings), and the skipped part's bytes have already been discarded: the source
+stream is fully drained by the time `completeUpload` runs, so an in-band
+re-upload would mean retaining every reconciled part in memory through to the
+end — defeating the whole point of resuming. So the trust boundary is documented,
+with two honest, caller-side remedies.
+
+**1. Close the window — verify before you skip.** `reconcileCompletedParts` is
+where parts are classified as "done". Only report parts you have *confirmed*
+still exist (the same `ListParts`/`HeadObject` probe you already run), so a GC'd
+part is treated as a normal missing part and re-uploaded instead of trusted:
+
+```ts
+reconcileCompletedParts: async () => {
+  const parts = await listParts(uploadId); // your backend probe
+  // Drop anything the backend cannot confirm is still present.
+  return parts.filter((p) => p.etag.length > 0 && p.size > 0);
+},
+```
+
+**2. Recover after the fact — re-probe and re-invoke.** A part can still be GC'd
+in the (usually day-scale) gap between reconcile and complete. If
+`completeUpload` rejects, re-probe and re-run the upload with a **fresh** source
+stream; the re-probed reconcile no longer lists the missing part, so it is
+re-uploaded and the upload completes. The library is idempotent across
+invocations, so the second run re-reads the source, re-uploads only the
+now-missing parts, and commits:
+
+```ts
+import { uploadMultipart } from "@tranquilload/core/multipart";
+import { CompleteUploadError } from "@tranquilload/core/errors";
+
+async function uploadWithStaleRecovery(
+  openStream: () => ReadableStream<Uint8Array>,
+): Promise<void> {
+  const run = () =>
+    uploadMultipart({
+      stream: openStream(), // a FRESH stream each attempt
+      chunkSize: 8 * 1024 * 1024,
+      reconcileCompletedParts: async () => listParts(uploadId), // re-probed each run
+      uploadPart,
+      completeUpload,
+    }).result;
+
+  try {
+    await run();
+  } catch (err) {
+    if (err instanceof CompleteUploadError) {
+      // A reconciled part was GC'd before commit — re-probe + re-drive once.
+      await run();
+    } else {
+      throw err;
+    }
+  }
+}
+```
+
+(A fully GC'd *upload* — `NoSuchUpload` on the reconcile itself, not a single
+part — is the separate `reinitOnStale` case: see the `reinitOnStale` option,
+which re-initiates a fresh multipart from part 1.)
+
 <a id="ingestintegrity"></a>
 
 ### Ingest integrity (the no-checksum trust boundary)
