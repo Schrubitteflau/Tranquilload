@@ -395,6 +395,12 @@ detection is intentionally **not** attempted — the Fetch API exposes no
 negotiated-protocol signal in the browser, so the size threshold is the honest,
 memory-safe knob.
 
+> **The bound is only as honest as `contentLength`.** The buffer-vs-stream choice
+> trusts the size you supply. Understating it can still buffer a larger-than-expected
+> source (the uploaded data is always correct — the `Blob` is built from the real
+> drained bytes — but the memory ceiling is only as accurate as your number). Pass
+> `file.size` for a `File`/`Blob`.
+
 ### Events are a stream
 
 `uploadMultipart` returns an `events: ReadableStream<UploadEvent>`. Subscribe with `for await`, pipe to a `TransformStream`, or ignore it entirely — no overhead if unused. Events: `UploadInitiated`, `PartCompleted`, `ProgressTick`, `CircuitOpen`, `UploadCompleted`.

@@ -1,7 +1,7 @@
 # Story 13.6: simpleHttpUpload HTTP/1.1 Streaming Transmission
 
 **Epic:** 13 (Library Hardening)
-**Status:** dev done — pending independent Opus review + release
+**Status:** done (dev + independent Opus review Approve-with-nits 0H/0M/3L) — pending release
 **Risk cluster:** R-P2-4 / Decision D1 (spike-gated)
 
 ## Story
@@ -115,4 +115,37 @@ Opus 4.8 (dev). Independent fresh-context Opus `code-reviewer` for review (Codex
 
 ## Senior Developer Review (AI)
 
-Pending — independent Opus `code-reviewer` (fresh context).
+**Reviewer:** independent fresh-context Opus 4.8 `code-reviewer` agent (Codex unavailable).
+**Verdict:** Approve-with-nits — **0 HIGH / 0 MED / 3 LOW**.
+
+The reviewer traced every buffering path (memory-safe by construction), confirmed
+the decision is made up-front before the single-use stream is touched, precedence
+(`bufferMode` wins) and byte-for-byte backward-compat are correct and locked, docs
+match code (option names, `TypeError` contract, `<=` inclusivity), the changeset is
+correctly scoped (`@tranquilload/adapters` patch, no core leak), and judged the
+`11.7-E2E-002` re-tag (not flip) HONEST (raw-engine HTTP/1.1 streaming is a platform
+fact the adapter routes around but cannot remove).
+
+### Findings & dispositions
+
+- **F1 (LOW) — no integer check on `contentLength`/`maxAutoBufferBytes`. DECLINED.**
+  Fractional values are harmless: `<=` is total over reals and the choice is
+  decision-only (no memory-safety impact). `Number.isInteger` would reject
+  legitimately-computed sizes for zero safety gain.
+- **F2 (LOW) — `bufferMode:true` short-circuits the threshold guards (a typo'd
+  `maxAutoBufferBytes` is silently ignored under `bufferMode`). DECLINED.** The TSDoc
+  contracts "Ignored when `bufferMode` is set"; throwing on a field documented as
+  ignored would contradict the contract.
+- **F3 (LOW) — the memory bound is only as honest as the supplied `contentLength`.
+  APPLIED.** Added a one-line README caveat (the buffer/stream choice trusts the
+  caller's size; uploaded data is always correct since the `Blob` is built from real
+  drained bytes, but the ceiling is only as accurate as the number).
+
+### Verify-items raised by the reviewer (it cannot run tests) — checked by the author
+
+1. Adapters tests 16/16 (9 + 7) — GREEN (run pre- and post-review).
+2. README doctest harness compiles the new block — **moot**: `doctest.test.ts`
+   `findBlock` targets only the "One-shot upload" / "Multipart upload to S3" /
+   "Errors are data" headings; the new "streaming vs buffered" block is never
+   compiled (reviewer misread the harness).
+3. Workspace typecheck — GREEN (4/4; test-app is outside the gate).
