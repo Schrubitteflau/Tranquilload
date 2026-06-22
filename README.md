@@ -366,6 +366,35 @@ required.
 > **Memory caveat.** `bufferMode: true` holds the entire source in memory.
 > **Do not enable for files larger than available memory.**
 
+**Size-bounded auto-buffer (when you know the size).** Rather than toggling
+`bufferMode` per environment, hand the adapter the source size and a ceiling and
+let it choose — the HTTP/1.1-safe buffered path for small sources, streaming for
+large ones:
+
+```ts
+simpleHttpUpload({
+  url,
+  contentLength: file.size,     // known source size
+  maxAutoBufferBytes: 8_000_000, // buffer up to 8 MB; stream above it
+});
+```
+
+The decision is made **before** the (single-use) stream is consumed:
+
+- `contentLength <= maxAutoBufferBytes` → buffered PUT/POST (works on HTTP/1.x,
+  every engine, no manual `bufferMode`).
+- `contentLength > maxAutoBufferBytes` → streamed PUT/POST (`duplex: 'half'`,
+  HTTP/2) — the large source is **never** held in memory.
+
+This is why the size must be known up front: a `ReadableStream` can't be
+measured without consuming it, and once consumed it can be neither re-streamed
+nor buffered. `maxAutoBufferBytes` therefore requires `contentLength` (the
+factory throws a `TypeError` otherwise) and will not blindly buffer an unsized
+source. `bufferMode: true` still wins if set (explicit mode beats auto). HTTP/2
+detection is intentionally **not** attempted — the Fetch API exposes no
+negotiated-protocol signal in the browser, so the size threshold is the honest,
+memory-safe knob.
+
 ### Events are a stream
 
 `uploadMultipart` returns an `events: ReadableStream<UploadEvent>`. Subscribe with `for await`, pipe to a `TransformStream`, or ignore it entirely — no overhead if unused. Events: `UploadInitiated`, `PartCompleted`, `ProgressTick`, `CircuitOpen`, `UploadCompleted`.

@@ -4,7 +4,8 @@ import { test, expect, chromium, firefox, webkit, type BrowserType } from "@play
  * Story 11.7 — 11.7-E2E-002 (F#40 / G#2) — `simpleHttpUpload` streaming body
  * across Chromium / Firefox / WebKit (PW-Lib harness).
  *
- * Codifies R-P2-4 / Decision D1 / Epic 13 candidate.
+ * Codifies R-P2-4 / Decision D1. Epic 13 candidate → RESOLVED by Story 13.6
+ * (re-tag, NOT flip — see footer).
  *
  * `simpleHttpUpload` (default mode) sends a `ReadableStream` fetch body with
  * `duplex: "half"`. This spec EMPIRICALLY probes the per-engine behaviour and
@@ -21,8 +22,19 @@ import { test, expect, chromium, firefox, webkit, type BrowserType } from "@play
  *     server). This is the remaining gap.
  *
  * The remaining transmission gap (negotiating HTTP/2, or a per-engine buffered
- * fallback) is an Epic 13 candidate. Flip this matrix to "streamed PUT
- * transmits in all engines" once that fix ships.
+ * fallback) was an Epic 13 candidate. Story 13.6's design pass found that
+ * closing it AT THE RAW-ENGINE LEVEL is undeliverable in-browser: Fetch exposes
+ * no negotiated-protocol signal, so HTTP/2 detection is impossible, and a
+ * catch-fail→retry-buffered fallback is blocked by single-use streams. So 13.6
+ * does NOT change raw-engine behaviour — this probe stays a TRUE negative lock.
+ * Instead, 13.6 ships an opt-in size-bounded auto-buffer on the adapter:
+ * `maxAutoBufferBytes` + `contentLength` route small sources through the
+ * HTTP/1.1-safe buffered path with no manual `bufferMode`. That deterministic
+ * buffer-vs-stream decision is locked at the unit tier
+ * (`packages/tranquilload-adapters/src/protocols/simple-http-upload.test.ts`,
+ * `13.6-INT-001..007`). Do NOT flip this matrix — the raw streamed-PUT gap is a
+ * platform fact, correctly asserted here, that the adapter routes around rather
+ * than removes.
  */
 
 interface StreamBodyProbe {
@@ -188,14 +200,19 @@ test.describe("R-P2-4 — `simpleHttpUpload` streaming body cross-browser (PW-Li
         `wk: buffered=${wk.bufferedTransmitted} streamed=${wk.transmittedOverHttp1}).`,
     ).toBe(true)
 
-    // Epic 13 candidate: flip to `.toBe(true)` for all engines when the
-    // cross-browser streaming-transmission fix ships.
+    // This is the RAW-ENGINE gap. Story 13.6 deliberately did NOT close it
+    // (HTTP/2 detection is undeliverable in-browser; buffered retry is blocked
+    // by single-use streams) — it added an adapter-level size-bounded
+    // auto-buffer that routes small sources around it (locked at the unit tier,
+    // `simple-http-upload.test.ts` `13.6-INT-001..007`). Keep this a `false`
+    // lock: if it ever flips, the browser/Fetch platform changed, not the lib.
     const bothTransmitted = fx.transmittedOverHttp1 && wk.transmittedOverHttp1
     expect(
       bothTransmitted,
       `Firefox/WebKit streamed PUT over HTTP/1.1 unexpectedly BOTH succeeded ` +
         `(fx=${fx.transmitError ?? "ok"}, wk=${wk.transmitError ?? "ok"}). ` +
-        `The Epic 13 cross-browser transmission fix may have landed — flip this matrix.`,
+        `Story 13.6 did not (and cannot) close the raw-engine gap — a flip here ` +
+        `means the browser/Fetch platform now transmits HTTP/1.1 request streams.`,
     ).toBe(false)
   })
 })

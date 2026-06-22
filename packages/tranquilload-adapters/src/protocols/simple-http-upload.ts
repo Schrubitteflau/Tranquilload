@@ -8,6 +8,12 @@ import { AbortError, CompleteUploadError } from "@tranquilload/core/errors"
  * mode and is the most memory-efficient option. If your target only speaks
  * HTTP/1.x, or your runtime does not understand `duplex: 'half'`, set
  * `bufferMode: true` to buffer the whole source into a `Blob` before sending.
+ *
+ * For sources of a **known size**, prefer size-bounded auto-buffering over the
+ * manual `bufferMode` toggle: set {@link SimpleHttpUploadOptions.contentLength}
+ * and {@link SimpleHttpUploadOptions.maxAutoBufferBytes}, and the adapter picks
+ * the HTTP/1.1-safe buffered path automatically when the source is small enough
+ * to be memory-safe, falling back to streaming for larger sources.
  */
 export interface SimpleHttpUploadOptions {
   url: string
@@ -23,20 +29,85 @@ export interface SimpleHttpUploadOptions {
    * than available memory.** Use only when streaming PUT isn't supported
    * (HTTP/1.x, environments where `duplex: 'half'` is unavailable).
    *
+   * Takes precedence over {@link maxAutoBufferBytes} (explicit mode wins).
+   *
    * Default: `false` (streaming with `duplex: 'half'`, requires HTTP/2).
    */
   bufferMode?: boolean
+  /**
+   * Byte length of the source stream, when known. Used **only** for the
+   * size-bounded auto-buffer decision (see {@link maxAutoBufferBytes}); it is
+   * not sent as a `Content-Length` header. The size must be known up front
+   * because the source `ReadableStream` is single-use — it cannot be measured
+   * without consuming it, after which neither a buffered retry nor a streamed
+   * send is possible.
+   */
+  contentLength?: number
+  /**
+   * Opt-in **size-bounded auto-buffer** threshold, in bytes. When set, the
+   * adapter chooses the transport up front — before the single-use stream is
+   * consumed — based on {@link contentLength}:
+   *
+   *   - `contentLength <= maxAutoBufferBytes` → **buffered** PUT/POST
+   *     (HTTP/1.1-safe, works in every engine, no manual `bufferMode`).
+   *   - `contentLength >  maxAutoBufferBytes` → **streamed** PUT/POST
+   *     (`duplex: 'half'`, requires HTTP/2) — the memory-safe choice for large
+   *     sources, which are never buffered into memory.
+   *
+   * Requires {@link contentLength}: if `maxAutoBufferBytes` is set without it,
+   * the factory throws a `TypeError` rather than risk buffering an unsized
+   * source. Ignored when {@link bufferMode} is set.
+   *
+   * Default: `undefined` (no auto-buffering; behaviour is the byte-for-byte
+   * streaming default).
+   */
+  maxAutoBufferBytes?: number
 }
 
 export function simpleHttpUpload(options: SimpleHttpUploadOptions): {
   upload: (stream: ReadableStream<Uint8Array>) => Promise<void>
 } {
-  const { url, method = "PUT", headers, signal, bufferMode = false } = options
+  const {
+    url,
+    method = "PUT",
+    headers,
+    signal,
+    bufferMode = false,
+    contentLength,
+    maxAutoBufferBytes,
+  } = options
+
+  // Decide the transport ONCE, up front, before the single-use stream is
+  // touched. Explicit `bufferMode` wins; otherwise size-bounded auto-buffer
+  // (`maxAutoBufferBytes`) kicks in for sources small enough to be HTTP/1.1-safe
+  // without holding an oversized file in memory.
+  const useBuffer = ((): boolean => {
+    if (bufferMode) return true
+    if (maxAutoBufferBytes === undefined) return false
+    if (!Number.isFinite(maxAutoBufferBytes) || maxAutoBufferBytes < 0) {
+      throw new TypeError(
+        `simpleHttpUpload: \`maxAutoBufferBytes\` must be a non-negative finite number, got ${maxAutoBufferBytes}.`
+      )
+    }
+    if (contentLength === undefined) {
+      throw new TypeError(
+        "simpleHttpUpload: `maxAutoBufferBytes` requires `contentLength` — the " +
+          "source size must be known before consuming the single-use stream to " +
+          "auto-buffer safely."
+      )
+    }
+    if (!Number.isFinite(contentLength) || contentLength < 0) {
+      throw new TypeError(
+        `simpleHttpUpload: \`contentLength\` must be a non-negative finite number, got ${contentLength}.`
+      )
+    }
+    return contentLength <= maxAutoBufferBytes
+  })()
 
   const upload = async (stream: ReadableStream<Uint8Array>): Promise<void> => {
     let response: Response
     try {
-      if (bufferMode) {
+      if (useBuffer) {
         const reader = stream.getReader()
         const chunks: Uint8Array[] = []
         try {

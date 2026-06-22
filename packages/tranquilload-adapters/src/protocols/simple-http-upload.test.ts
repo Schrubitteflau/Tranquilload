@@ -161,3 +161,151 @@ describe("simpleHttpUpload", () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })
+
+/**
+ * Story 13.6 — size-bounded auto-buffer (R-P2-4 / Decision D1).
+ *
+ * Net-new UNIT locks for the opt-in `maxAutoBufferBytes` path. The named lock
+ * `11.7-E2E-002` empirically probes RAW browser `fetch` HTTP/1.1 streaming
+ * capability — a platform fact this adapter cannot change — so it stays as-is
+ * (re-tagged), and the deterministic buffer-vs-stream DECISION is locked here at
+ * the unit tier instead. This is what 13.6 actually delivers: small bounded
+ * sources take the HTTP/1.1-safe buffered path with no manual `bufferMode`.
+ */
+describe("simpleHttpUpload — size-bounded auto-buffer (Story 13.6)", () => {
+  it("13.6-INT-001 (F#40) — auto-buffers (no manual bufferMode) when contentLength <= maxAutoBufferBytes", async () => {
+    const chunkA = new Uint8Array([1, 2, 3])
+    const chunkB = new Uint8Array([4, 5])
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(chunkA)
+        c.enqueue(chunkB)
+        c.close()
+      },
+    })
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const adapter = simpleHttpUpload({
+      url: "https://example.com/upload",
+      contentLength: 5,
+      maxAutoBufferBytes: 10,
+    })
+    await adapter.upload(stream)
+
+    const [, init] = fetchMock.mock.calls[0]!
+    expect(init.body).toBeInstanceOf(Blob)
+    expect((init.body as Blob).size).toBe(chunkA.length + chunkB.length)
+    expect(init.duplex).toBeUndefined()
+  })
+
+  it("13.6-INT-002 (F#40) — streams (duplex:'half', never buffered) when contentLength > maxAutoBufferBytes", async () => {
+    const stream = new ReadableStream<Uint8Array>()
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const adapter = simpleHttpUpload({
+      url: "https://example.com/upload",
+      contentLength: 100,
+      maxAutoBufferBytes: 10,
+    })
+    await adapter.upload(stream)
+
+    const [, init] = fetchMock.mock.calls[0]!
+    expect(init.body).toBe(stream)
+    expect(init.duplex).toBe("half")
+  })
+
+  it("13.6-INT-003 (F#40) — boundary: contentLength === maxAutoBufferBytes buffers (threshold is inclusive)", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(new Uint8Array([1, 2, 3, 4, 5]))
+        c.close()
+      },
+    })
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const adapter = simpleHttpUpload({
+      url: "https://example.com/upload",
+      contentLength: 5,
+      maxAutoBufferBytes: 5,
+    })
+    await adapter.upload(stream)
+
+    const [, init] = fetchMock.mock.calls[0]!
+    expect(init.body).toBeInstanceOf(Blob)
+    expect(init.duplex).toBeUndefined()
+  })
+
+  it("13.6-INT-004 (F#40) — explicit bufferMode:true overrides maxAutoBufferBytes even when the source exceeds the threshold", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(new Uint8Array([1, 2, 3]))
+        c.close()
+      },
+    })
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const adapter = simpleHttpUpload({
+      url: "https://example.com/upload",
+      bufferMode: true,
+      contentLength: 100,
+      maxAutoBufferBytes: 10,
+    })
+    await adapter.upload(stream)
+
+    const [, init] = fetchMock.mock.calls[0]!
+    expect(init.body).toBeInstanceOf(Blob)
+    expect(init.duplex).toBeUndefined()
+  })
+
+  it("13.6-INT-005 (F#40) — throws TypeError when maxAutoBufferBytes is set without contentLength (refuses to size an unsized stream)", () => {
+    expect(() =>
+      simpleHttpUpload({
+        url: "https://example.com/upload",
+        maxAutoBufferBytes: 10,
+      })
+    ).toThrow(TypeError)
+    expect(() =>
+      simpleHttpUpload({
+        url: "https://example.com/upload",
+        maxAutoBufferBytes: 10,
+      })
+    ).toThrow(/contentLength/)
+  })
+
+  it("13.6-INT-006 (F#40) — throws TypeError on a negative or non-finite threshold", () => {
+    expect(() =>
+      simpleHttpUpload({
+        url: "https://example.com/upload",
+        contentLength: 5,
+        maxAutoBufferBytes: -1,
+      })
+    ).toThrow(TypeError)
+    expect(() =>
+      simpleHttpUpload({
+        url: "https://example.com/upload",
+        contentLength: -1,
+        maxAutoBufferBytes: 10,
+      })
+    ).toThrow(TypeError)
+  })
+
+  it("13.6-INT-007 (F#40) — without maxAutoBufferBytes the default is byte-for-byte streaming (contentLength alone is inert)", async () => {
+    const stream = new ReadableStream<Uint8Array>()
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const adapter = simpleHttpUpload({
+      url: "https://example.com/upload",
+      contentLength: 5,
+    })
+    await adapter.upload(stream)
+
+    const [, init] = fetchMock.mock.calls[0]!
+    expect(init.body).toBe(stream)
+    expect(init.duplex).toBe("half")
+  })
+})

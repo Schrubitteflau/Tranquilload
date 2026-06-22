@@ -146,5 +146,5 @@ development_status:
   13-4-resilience-policies-and-timeouts: done
   13-5-observability-and-integrity: done
   13-5b-ingest-integrity-checksum: done # spike resolved → decline/document-only (no library code; doc-only)
-  13-6-simplehttpupload-http1-streaming-transmission: backlog
+  13-6-simplehttpupload-http1-streaming-transmission: in-progress # fork decided (Option 1: opt-in size-bounded auto-buffer) + dev done; pending independent Opus review
   epic-13-retrospective: optional
