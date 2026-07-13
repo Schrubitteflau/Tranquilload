@@ -44,6 +44,17 @@ export interface DriveArgs {
     readonly recurs: number
     readonly kind?: "exponential" | "spaced"
   }
+  /**
+   * Opt-in circuit breaker. Threaded straight into `uploadMultipart`'s
+   * `circuitBreaker` option. NB: through the streaming API the breaker only
+   * trips deterministically at `threshold: 1` — the first exhausted part opens
+   * the circuit. `threshold > 1` fails-fast as `PartUploadError` before a second
+   * part can accumulate (see `circuit-open.spec.ts`).
+   */
+  readonly circuitBreaker?: {
+    readonly threshold: number
+    readonly cooldown: number
+  }
   /** Optional abort orchestration (the driver owns the AbortController). */
   readonly abort?: {
     readonly when:
@@ -64,6 +75,8 @@ export interface SerializedUploadError {
   readonly partNumber?: number
   readonly totalAttempts?: number
   readonly causeMessage?: string
+  /** `CircuitOpenError.failedParts` — consecutive part failures that opened the circuit. */
+  readonly failedParts?: number
 }
 
 export interface DriveResult {
@@ -129,6 +142,7 @@ export async function driveMultipartInPage(args: DriveArgs): Promise<DriveResult
       partNumber: o.partNumber as number | undefined,
       totalAttempts: o.totalAttempts as number | undefined,
       causeMessage,
+      failedParts: o.failedParts as number | undefined,
     }
   }
 
@@ -203,7 +217,9 @@ export async function driveMultipartInPage(args: DriveArgs): Promise<DriveResult
       if (!signRes.ok) throw new Error(`sign failed: HTTP ${signRes.status}`)
       const { url } = (await signRes.json()) as { url: string }
       resolveFirstPutStarted()
-      const putRes = await fetch(url, { method: "PUT", body: chunk, signal })
+      // `chunk` is a Uint8Array; the DOM `BodyInit` type (via @types/node) does
+      // not include it — cast per the project's BodyInit convention (type-only).
+      const putRes = await fetch(url, { method: "PUT", body: chunk as unknown as BodyInit, signal })
       if (!putRes.ok) throw new Error(`PUT part ${partNumber} failed: HTTP ${putRes.status}`)
       const etag = putRes.headers.get("ETag")
       if (!etag) throw new Error(`PUT part ${partNumber}: missing ETag`)
@@ -269,6 +285,7 @@ export async function driveMultipartInPage(args: DriveArgs): Promise<DriveResult
   }
   if (args.withReconcile) opts.reconcileCompletedParts = reconcileCompletedParts
   if (retrySchedule !== undefined) opts.retrySchedule = retrySchedule
+  if (args.circuitBreaker) opts.circuitBreaker = args.circuitBreaker
 
   const handle = uploadMultipart(opts)
   handle.uploadId.then((id) => (ctx.uploadId = ctx.uploadId || id)).catch(() => {})
