@@ -81,7 +81,7 @@ for (const [engine, browserType] of ENGINES) {
             chunkSize: CHUNK,
             maxConcurrency: 1,
             abort: { when: "duringFirstPart" },
-          })
+          } as const)
 
           expect(result.ok).toBe(false)
           expect(result.error?._tag).toBe("AbortError")

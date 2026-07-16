@@ -37,7 +37,7 @@ for (const [engine, browserType] of ENGINES) {
             chunkSize: CHUNK,
             maxConcurrency: 1,
             abort: { when: "duringInitiate" },
-          })
+          } as const)
 
           expect(result.ok).toBe(false)
           // Aborting during initiate surfaces either AbortError (orchestration
@@ -81,7 +81,7 @@ for (const [engine, browserType] of ENGINES) {
             chunkSize: CHUNK,
             maxConcurrency: 1,
             abort: { when: "afterPartCallback", afterPart: 1 },
-          })
+          } as const)
 
           expect(result.ok).toBe(false)
           expect(result.error?._tag).toBe("AbortError")
@@ -112,7 +112,7 @@ for (const [engine, browserType] of ENGINES) {
             chunkSize: CHUNK,
             maxConcurrency: 1,
             abort: { when: "duringComplete" },
-          })
+          } as const)
 
           expect(result.ok).toBe(false)
           // Either AbortError (fiber interrupted) or CompleteUploadError (the

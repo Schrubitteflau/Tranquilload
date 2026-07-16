@@ -7,7 +7,15 @@
     "baseUrl": ".",
     "paths": {
       "@support/*": ["support/*"]
-    }
+    },
+    // e2e specs are transpiled by Playwright's bundler-style loader, which
+    // resolves the extension-less `@support/*` + bare-directory imports that
+    // NodeNext (the monorepo default) rejects. Bundler resolution is the honest
+    // match for how these files actually run. The integration gate re-pins
+    // NodeNext (tsconfig.integration.json) to keep validating the real
+    // published-consumer resolution path.
+    "module": "ESNext",
+    "moduleResolution": "Bundler"
   },
   "include": ["**/*.ts", "playwright.config.ts"],
   "exclude": ["node_modules", "test-results", "playwright-report"]

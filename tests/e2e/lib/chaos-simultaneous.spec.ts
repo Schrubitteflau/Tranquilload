@@ -83,7 +83,7 @@ for (const [engine, browserType] of ENGINES) {
             maxConcurrency: 1,
             retry: { delayMs: 10_000, recurs: 3, kind: "spaced" },
             abort: { when: "firstPartFailure" },
-          })
+          } as const)
 
           expect(result.ok).toBe(false)
           expect(result.error?._tag).toBe("AbortError")

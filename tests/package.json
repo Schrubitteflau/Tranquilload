@@ -14,7 +14,7 @@
     "test:e2e:report": "playwright show-report",
     "test:e2e:install": "playwright install --with-deps",
     "test:integration": "vitest run --config vitest.config.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.integration.json",
+    "typecheck": "tsc --noEmit -p tsconfig.integration.json && tsc --noEmit -p tsconfig.e2e.json",
     "minio:up": "pnpm --filter @tranquilload/test-app minio:up",
     "minio:down": "pnpm --filter @tranquilload/test-app minio:down"
   },

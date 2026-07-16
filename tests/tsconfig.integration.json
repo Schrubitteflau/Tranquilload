@@ -1,7 +1,12 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "types": ["node"]
+    "types": ["node"],
+    // Integration tests validate the DIST integrity of the published packages,
+    // so they must resolve exactly as a real NodeNext consumer would — re-pin
+    // NodeNext over the Bundler default the base config sets for e2e.
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext"
   },
   "include": ["integration/**/*.ts", "vitest.config.ts"],
   "exclude": ["node_modules", "test-results", "playwright-report", "e2e", "support"]

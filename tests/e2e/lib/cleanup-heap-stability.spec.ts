@@ -53,7 +53,9 @@ test.describe("11.2 — heap stability (R-P2-2, PW-Lib, Chromium-only)", () => {
 
       // Wait for the bench page to expose the lib (Vite ESM module graph).
       await page.waitForFunction(
-        () => typeof window.__tlBench__?.uploadMultipart === "function",
+        () =>
+          typeof (window as unknown as { __tlBench__?: { uploadMultipart?: unknown } })
+            .__tlBench__?.uploadMultipart === "function",
         undefined,
         { timeout: 15_000 },
       )
@@ -69,6 +71,14 @@ test.describe("11.2 — heap stability (R-P2-2, PW-Lib, Chromium-only)", () => {
         type W = typeof window & {
           gc?: () => void
           performance: Performance & { memory?: { usedJSHeapSize: number } }
+          __tlBench__: {
+            uploadMultipart: (args: {
+              stream: ReadableStream<Uint8Array>
+              chunkSize: number
+              uploadPart: () => string
+              completeUpload: () => void
+            }) => { result: Promise<unknown>; events: ReadableStream<unknown> }
+          }
         }
         const w = window as W
         const gcAvailable = typeof w.gc === "function"
