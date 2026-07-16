@@ -8,6 +8,7 @@
     "dev:server": "tsx watch server/index.ts",
     "dev:client": "vite",
     "build:client": "vite build",
+    "typecheck": "tsc --noEmit",
     "minio:up": "docker compose up -d",
     "minio:down": "docker compose down",
     "minio:logs": "docker compose logs -f minio"

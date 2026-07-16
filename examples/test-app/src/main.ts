@@ -151,7 +151,9 @@ function makeMultipartCallbacks(file: File, ctx: MultipartContext, signal?: Abor
     if (!signRes.ok) throw new Error(`sign failed: HTTP ${signRes.status}`)
     const { url } = await signRes.json() as { url: string }
 
-    const putRes = await fetch(url, { method: "PUT", body: chunk, signal })
+    // `chunk` is a Uint8Array; the DOM `BodyInit` type (via @types/node) does
+    // not include it — cast per the project's BodyInit convention (type-only).
+    const putRes = await fetch(url, { method: "PUT", body: chunk as unknown as BodyInit, signal })
     if (!putRes.ok) throw new Error(`PUT part ${partNumber} failed: HTTP ${putRes.status}`)
     const etag = putRes.headers.get("ETag")
     if (!etag) throw new Error(`PUT part ${partNumber}: missing ETag`)
