@@ -15,6 +15,7 @@
     "url": "https://github.com/Schrubitteflau/Tranquilload/issues"
   },
   "homepage": "https://github.com/Schrubitteflau/Tranquilload#readme",
+  "files": ["dist", "CHANGELOG.md"],
   "type": "module",
   "exports": {
     "./fromFile": {
