@@ -3,6 +3,9 @@
 > Type-safe, runtime-agnostic file upload library built on [Effect](https://effect.website).
 > One-shot or multipart. Configure-once, resilient by default.
 
+[![@tranquilload/core on npm](https://img.shields.io/npm/v/@tranquilload/core?logo=npm&label=%40tranquilload%2Fcore&color=cb3837)](https://www.npmjs.com/package/@tranquilload/core)
+[![@tranquilload/adapters on npm](https://img.shields.io/npm/v/@tranquilload/adapters?logo=npm&label=%40tranquilload%2Fadapters&color=cb3837)](https://www.npmjs.com/package/@tranquilload/adapters)
+[![CI](https://github.com/Schrubitteflau/Tranquilload/actions/workflows/ci.yml/badge.svg)](https://github.com/Schrubitteflau/Tranquilload/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Tranquilload is a TypeScript library for uploading bytes — from a `File`, a Node `Readable`, or any `ReadableStream<Uint8Array>` — to anywhere that accepts chunks. It is built around two ideas:
@@ -39,7 +42,20 @@ pnpm add @tranquilload/core @tranquilload/adapters effect
 # or npm / yarn / bun
 ```
 
+Two packages on npm:
+
+- **[`@tranquilload/core`](https://www.npmjs.com/package/@tranquilload/core)** — the protocol-agnostic engine. Usable on its own if you write your own callbacks.
+- **[`@tranquilload/adapters`](https://www.npmjs.com/package/@tranquilload/adapters)** — ready-made presets (S3, HTTP, `File`, Node `Readable`). Optional.
+
 `effect` is a peer dependency — installed once, shared across both packages.
+
+**Dual-format, types-first.** Both packages ship an ESM (`.mjs`) and a CommonJS (`.cjs`) build side by side, each with its own declarations (`.d.mts` / `.d.cts`). `import` and `require` therefore both resolve to correct types under `node16`/`nodenext` as well as `bundler` — there is no `@types/*` companion to install and no `moduleResolution` tuning to do. Source maps ship too, with the original TypeScript embedded, so a debugger steps into real source rather than bundled output.
+
+**Everything is a subpath.** There is no root export: you import from `@tranquilload/core/multipart`, `@tranquilload/adapters/s3MultipartUpload`, and so on — six entry points per package, listed under [Package layout](#packagelayout). This is what keeps bundles small; reaching for the multipart engine never drags in the one-shot path or the compression service. Nothing outside `fromNodeReadable` imports `node:*`, so the browser build stays clean.
+
+Each of those three properties is locked by CI against the *published* tarball — dual-format resolution, tree-shakeability, and the absence of stray `node:` imports are asserted on a real `npm install` of the packed artifact, not on the source tree.
+
+Both packages are published from CI with [build provenance](https://docs.npmjs.com/generating-provenance-statements), so every release is cryptographically traceable to the workflow run that built it.
 
 > **Requires Node 22+.** Older runtimes are missing `process.getBuiltinModule`, used by the build toolchain.
 
@@ -515,6 +531,8 @@ The peer range is `>=3.19.19` — covers minor/patch updates without requiring u
 
 ---
 
+<a id="packagelayout"></a>
+
 ## Package layout
 
 ```
@@ -558,6 +576,8 @@ The README intentionally stays surface-level. For the design rationale, the arch
 
 - **[`docs/project-context.md`](./docs/project-context.md)** — critical implementation rules, technology stack, anti-patterns, and conventions. Read this before touching the code.
 - **[`_bmad-output/brainstorming/brainstorming-session-2026-03-08-001.md`](./_bmad-output/brainstorming/brainstorming-session-2026-03-08-001.md)** — the full brainstorming session that shaped the library: First Principles, SCAMPER, and Cross-Pollination over the 45 ideas that defined the v1 scope and the v2 roadmap.
+
+Version history: [core changelog](./packages/tranquilload-core/CHANGELOG.md) · [adapters changelog](./packages/tranquilload-adapters/CHANGELOG.md) · [GitHub releases](https://github.com/Schrubitteflau/Tranquilload/releases).
 
 ---
 
