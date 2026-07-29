@@ -1,6 +1,6 @@
 {
   "name": "@tranquilload/adapters",
-  "version": "0.1.6",
+  "version": "0.1.8",
   "description": "Adapters for Tranquilload (S3, File, Node, HTTP)",
   "license": "MIT",
   "repository": {
@@ -15,7 +15,10 @@
     "url": "https://github.com/Schrubitteflau/Tranquilload/issues"
   },
   "homepage": "https://github.com/Schrubitteflau/Tranquilload#readme",
-  "files": ["dist", "CHANGELOG.md"],
+  "files": [
+    "dist",
+    "CHANGELOG.md"
+  ],
   "type": "module",
   "exports": {
     "./fromFile": {
