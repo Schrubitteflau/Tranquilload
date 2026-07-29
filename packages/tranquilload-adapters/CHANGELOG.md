@@ -1,5 +1,19 @@
 # @tranquilload/adapters
 
+## 0.1.10
+
+### Patch Changes
+
+- 052491b: Add npm version badges and direct npm links for both packages to the README,
+  plus a note that releases carry build provenance.
+
+  Docs only — no code change. Released because the README now ships inside the
+  published tarballs, so the npmjs.com pages would otherwise keep the previous
+  version of it.
+
+- Updated dependencies [052491b]
+  - @tranquilload/core@0.1.10
+
 ## 0.1.9
 
 ### Patch Changes
