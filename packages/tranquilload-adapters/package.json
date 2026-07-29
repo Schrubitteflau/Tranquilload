@@ -17,7 +17,9 @@
   "homepage": "https://github.com/Schrubitteflau/Tranquilload#readme",
   "files": [
     "dist",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "README.md",
+    "LICENSE"
   ],
   "type": "module",
   "exports": {
@@ -69,6 +71,7 @@
     "vitest": "^3.2.0"
   },
   "scripts": {
+    "prepack": "node ../../scripts/copy-package-docs.mjs",
     "build": "tsdown",
     "dev": "tsdown --watch",
     "test": "vitest run",

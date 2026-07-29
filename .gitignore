@@ -3,3 +3,8 @@ dist/
 !tests/integration/dist/
 .turbo/
 *.tsbuildinfo
+
+# Generated at prepack by scripts/copy-package-docs.mjs — the sources live at
+# the repo root. They still reach the tarball via each package's `files` field.
+packages/*/README.md
+packages/*/LICENSE
